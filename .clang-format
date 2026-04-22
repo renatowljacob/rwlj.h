@@ -3,16 +3,18 @@ BasedOnStyle: Mozilla
 AlignAfterOpenBracket: BlockIndent
 BreakAfterReturnType: TopLevelDefinitions
 BreakBeforeBraces: Linux
+# BreakBeforeBraces: Allman
 PointerAlignment: Right
 SortIncludes: true
 ColumnLimit: 80
 IndentCaseLabels: false
-IndentWidth: 8
-ContinuationIndentWidth: 8
-TabWidth: 8
+IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
 UseTab: Never
 AlignConsecutiveMacros:
   Enabled: true
   AcrossEmptyLines: false
   AcrossComments: false
   AlignFunctionDeclarations: true
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
