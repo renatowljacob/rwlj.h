@@ -2,17 +2,32 @@
 
 # TODO: script to generate function pointer array stuff
 
+default_args="-std=c11 -Wall -Wextra -Wformat-overflow -Wuse-after-free=1 \
+        -Wstrict-prototypes -Wconversion -Wno-override-init -O0 -g3"
 analyzer_args="-fanalyzer "
-sanitizer_args="-fsanitize=address,undefined "
+sanitizer_args="-fsanitize=address,undefined -Werror -fmax-errors=1 "
 output_file="main"
 tests_file="tests.c"
 
-gcc_command()
-{
-    gcc -std=c11 -Wall -Wextra -Wformat-overflow -Wuse-after-free=1 \
-        -Wstrict-prototypes -Wconversion -Wno-override-init \
-        -Werror -fmax-errors=1 -O0 -g3 \
-        ${1} -o "${output_file}" "${tests_file}" rwlj.h
-}
-
-gcc_command "${analyzer_args}" -o main rwlj.h tests.c && gcc_command "${sanitizer_args}" -o main rwlj.h tests.c && ./main
+case ${1} in
+analyzer)
+    ./test_gen \
+        && gcc ${default_args} ${analyzer_args} \
+            -o /dev/null rwlj.h ${tests_file} \
+        && printf '%b\n' "No analyzer errors reported"
+    ;;
+no-analyzer)
+    ./test_gen \
+        && gcc ${default_args} ${sanitizer_args} \
+            -o ${output_file} rwlj.h ${tests_file} \
+        && ./main
+    ;;
+*)
+    ./test_gen \
+        && gcc ${default_args} ${analyzer_args} \
+            -o /dev/null rwlj.h ${tests_file} \
+        && gcc ${default_args} ${sanitizer_args} \
+            -o ${output_file} rwlj.h ${tests_file} \
+        && ./main
+    ;;
+esac

@@ -75,7 +75,8 @@ typedef __uint128_t u128;
 
 typedef intptr_t intptr;
 typedef uintptr_t uintptr;
-typedef ptrdiff_t isize;
+typedef ptrdiff_t ptrdiff;
+typedef ptrdiff isize;
 typedef size_t usize;
 
 typedef bool b8;
@@ -153,16 +154,23 @@ typedef double f64;
         rwlj_printfln(__VA_ARGS__);                                            \
         RWLJ_TRAP();                                                           \
     } while (false)
+
+#define rwlj_assert_fail(...) rwlj_assert_msg(false, __VA_ARGS__)
 #else
 #define rwlj_assert(cond) rwlj_no_op()
 
 #define rwlj_assert_msg(cond, ...) rwlj_no_op()
+
+#define rwlj_assert_fail(...) rwlj_no_op()
 #endif
 
 #define __rwlj_static_assert(cond, msg)                                        \
     rwlj_global u8 rwlj_concat(msg, RWLJ_LINE)[!!(cond) ? 1 : -1]
+
 #define rwlj_static_assert(cond)                                               \
     __rwlj_static_assert(cond, static_assertion_at_line_)
+
+#define rwlj_panic(msg) __rwlj_static_assert(false, msg)
 
 #define rwlj_size_of(x)           (isize)(sizeof(x))
 #define rwlj_offset_of(T, member) ((isize) & (((T *)0)->member))
@@ -177,7 +185,10 @@ typedef double f64;
 #define rwlj_container_of(T, object, member)                                   \
     cast(void *)(cast(intptr)(object) - rwlj_offset_of(T, member))
 
+#define RWLJ_WORD_SIZE rwlj_size_of(uintptr)
+
 #define rwlj_size_of_array(a) (rwlj_size_of(a) / rwlj_size_of(0 [a]))
+#define rwlj_size_of_buf(a)   (rwlj_size_of(a) / rwlj_size_of(0 [a]))
 
 #define rwlj_bit(n) (1 << n)
 #define rwlj_kb(n)  (n << 10)
@@ -191,14 +202,12 @@ typedef double f64;
         (y) = __temp;                                                          \
     } while (false)
 
-#define rwlj_max(x, y)              (x > y ? x : y)
-#define rwlj_min(x, y)              (x < y ? x : y)
-#define rwlj_clamp(x, lower, upper) (rwlj_max(rwlj_min(x, upper), lower))
+#define rwlj_max(x, y)          (x > y ? x : y)
+#define rwlj_min(x, y)          (x < y ? x : y)
+#define rwlj_clamp(x, min, max) (rwlj_max(rwlj_min(x, max), min))
 
-#define rwlj_align_pow2(x, b) ((x + b - 1) & (~(b - 1)))
-#define rwlj_is_pow2(x)       ((x & (x - 1)) == 0)
-
-// #define rwlj_is_nil(ptr, nil) (ptr == NULL || ptr == nil)
+#define rwlj_align_pow2(x, align) ((x + align - 1) & (~(align - 1)))
+#define rwlj_is_pow2(x)           ((x & (x - 1)) == 0)
 
 #define rwlj_is_space(c)                                                       \
     (c == ' ' || c == '\f' || c == '\n' || c == '\r' || c == '\t' || c == '\v')
@@ -216,6 +225,16 @@ typedef double f64;
 #define RWLJ_FUNCTION __func__
 #define RWLJ_FILE     __FILE__
 #define RWLJ_COUNTER  (__COUNTER__ + 1)
+
+/*
+ *  Memory
+ */
+
+#define rwlj_memory_compare(a, b, size)  memcmp(a, b, size)
+#define rwlj_memory_copy(dst, src, size) memcpy(dst, src, size)
+#define rwlj_memory_move(dst, src, size) memmove(dst, src, size)
+#define rwlj_memory_set(mem, byte, size) memset(mem, byte, size)
+#define rwlj_memory_zero(mem, size)      rwlj_memory_set(mem, 0, size)
 
 /*
  *  Math
@@ -240,12 +259,15 @@ typedef double f64;
 #define RWLJ_F64_MASK  0x7ffll
 #define RWLJ_F64_BIAS  0x3ffll
 
+#define RWLJ_NAN      .0 / .0
+#define RWLJ_INFINITY .1 / .0
+
 enum rwljFloat_Class {
-    RWLJ_NORMAL,
-    RWLJ_SUBNORMAL,
-    RWLJ_INFINITY,
-    RWLJ_NEGATIVE_INFINITY,
-    RWLJ_NAN
+    RWLJ_FCLASS_NORMAL,
+    RWLJ_FCLASS_SUBNORMAL,
+    RWLJ_FCLASS_INFINITY,
+    RWLJ_FCLASS_NEGATIVE_INFINITY,
+    RWLJ_FCLASS_NAN
 };
 typedef isize rwljFloat_Class;
 
@@ -254,6 +276,7 @@ rwljFloat_Class rwlj_is_nan(f64 f);
 rwljFloat_Class rwlj_classify(f64 f);
 f64 rwlj_normalize(f64 f, i64 *exponent);
 f64 rwlj_frexp(f64 f, i64 *exponent);
+f64 rwlj_ldexp(f64 mantissa, i64 exponent);
 
 /*
  *  Memory Allocators
@@ -321,6 +344,17 @@ void rwlj_arena_temp_init(rwljArena_Temp *arena_temp, rwljArena *arena);
 void rwlj_arena_temp_free_all(rwljArena_Temp *arena_temp);
 
 /*
+ *  Algorithms
+ */
+
+typedef isize (*rwljSort_Proc)(void *a, void *b);
+
+void rwlj_sort(void *data, isize len, isize elem_size);
+void rwlj_sort_proc(void *data, isize len, isize elem_size, rwljSort_Proc proc);
+void rwlj_quick_sort(void *data, isize len, isize elem_size);
+void rwlj_insertion_sort(void *data, isize len, isize elem_size);
+
+/*
  *  Data Structures
  */
 
@@ -366,9 +400,8 @@ GENERIC_SLICE(char, String);
 
 #define rwlj_slice_clear(slice)                                                \
     do {                                                                       \
-        memset(                                                                \
+        rwlj_memory_zero(                                                      \
             &(slice)->data[0],                                                 \
-            0,                                                                 \
             cast(usize)((slice)->len * rwlj_size_of((slice)->data[0]))         \
         );                                                                     \
     } while (false)
@@ -453,48 +486,54 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
 #define rwlj_array_grow(array)                                                 \
     rwlj_array_resize(array, RWLJ_GROW_FORMULA((array)->capacity))
 
-#define rwlj_array_reserve(array, new_size)                                    \
-    rwlj_array_resize(array, new_size > (array)->capacity ? new_size : 0)
+#define rwlj_array_reserve(array, new_capacity)                                \
+    rwlj_array_resize(                                                         \
+        array, new_capacity > (array)->capacity ? new_capacity : 0             \
+    )
 
 #define rwlj_array_trim(array) rwlj_array_resize(array, (array)->len)
 
-// Abusing short circuiting to resize array (while also being an expression,
+// Abusing short circuit to resize array (while also being an expression,
 // that's the important part)
 // Checks to see if the array is a growing one and has enough capacity or can be
 // grown
 #define rwlj_array_append(array, value)                                        \
-    (((array)->kind == RWLJ_ARRAY_GROWING &&                                   \
-          ((array)->len < (array)->capacity) ||                                \
+    ((((array)->kind == RWLJ_ARRAY_GROWING &&                                  \
+       (array)->len < (array)->capacity) ||                                    \
       rwlj_array_grow(array)) ||                                               \
              ((array)->kind == RWLJ_ARRAY_FIXED &&                             \
               (array)->len < (array)->capacity)                                \
          ? ((array)->data[((array)->len)] = (value), (array)->len += 1, true)  \
          : false)
 
-#define rwlj_array_inject(array, index, value)                                 \
-    (((array)->kind == RWLJ_ARRAY_GROWING &&                                   \
-          ((array)->len < (array)->capacity) ||                                \
+#define rwlj_array_insert(array, index, value)                                 \
+    ((((array)->kind == RWLJ_ARRAY_GROWING &&                                  \
+       (array)->len < (array)->capacity) ||                                    \
       rwlj_array_grow(array)) ||                                               \
              ((array)->kind == RWLJ_ARRAY_FIXED &&                             \
               (array)->len < (array)->capacity)                                \
-         ? (memmove(                                                           \
+         ? (rwlj_memory_move(                                                  \
                 &(array)->data[index + 1],                                     \
                 &(array)->data[index],                                         \
-                cast(usize)(((array)->len * cast(usize)(array)->item_size))    \
+                (cast(usize)(array)->len * (array)->item_size)                 \
             ),                                                                 \
             (array)->data[index] = (value),                                    \
             ((array)->len += 1),                                               \
             true)                                                              \
          : false)
 
-#define rwlj_array_preppend(array, value) rwlj_array_inject(array, 0, value)
+#define rwlj_array_pop_nil(array, nil)                                         \
+    ((array)->len > 0 ? ((array)->len -= 1, (array)->data[(array)->len]) : nil)
 
-#define rwlj_array_pop(array)                                                  \
-    ((array)->len > 0 ? ((array)->len -= 1, (array)->data[(array)->len]) : 0)
+#define rwlj_array_pop(array) rwlj_array_pop_nil(array, 0)
 
 #define rwlj_array_remove_unordered(array, index)                              \
     do {                                                                       \
-        if ((index) < (array)->len && (index) >= 0 && (array)->len > 0) {      \
+        if (index == (array)->len - 1) {                                       \
+            (array)->len -= 1;                                                 \
+        }                                                                      \
+                                                                               \
+        if (index < (array)->len && index >= 0 && (array)->len > 0) {          \
             (array)->len -= 1;                                                 \
             (array)->data[index] = (array)->data[(array)->len];                \
         }                                                                      \
@@ -502,14 +541,17 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
 
 #define rwlj_array_remove_ordered(array, index)                                \
     do {                                                                       \
-        if ((index) < (array)->len && (index) >= 0 && (array)->len > 0) {      \
-            (array)->data[index] = (array)->data[--(array)->len];              \
-            memmove(                                                           \
+        if (index == (array)->len - 1) {                                       \
+            (array)->len -= 1;                                                 \
+        }                                                                      \
+                                                                               \
+        if (index < (array)->len && index >= 0 && (array)->len > 0) {          \
+            (array)->data[index] = (array)->data[index + 1];                   \
+            rwlj_memory_move(                                                  \
                 &(array)->data[index],                                         \
                 &(array)->data[index + 1],                                     \
-                cast(usize)(                                                   \
-                    ((array)->len - index) * cast(usize)(array)->item_size     \
-                )                                                              \
+                cast(usize)((array)->len - index) * (array)->item_size         \
+                                                                               \
             );                                                                 \
             (array)->len -= 1;                                                 \
         }                                                                      \
@@ -548,15 +590,27 @@ isize __rwlj_bprintf_va(
 isize rwlj_bprintf(rwljSlice_String buf, const char *fmt, ...);
 isize rwlj_bprintfln(rwljSlice_String buf, const char *fmt, ...);
 
-isize __rwlj_fprintf_va(i32 fd, bool has_new_line, char const *fmt, va_list ap);
-isize rwlj_fprintf(i32 fd, char const *fmt, ...);
-isize rwlj_fprintfln(i32 fd, char const *fmt, ...);
+typedef i32 rwljFile_Descriptor;
 
+isize __rwlj_fprintf_va(
+    rwljFile_Descriptor fd,
+    bool has_new_line,
+    char const *fmt,
+    va_list ap
+);
+isize rwlj_fprintf(rwljFile_Descriptor fd, char const *fmt, ...);
+isize rwlj_fprintfln(rwljFile_Descriptor fd, char const *fmt, ...);
+isize rwlj_printf(char const *fmt, ...);
+isize rwlj_printfln(char const *fmt, ...);
 isize rwlj_eprintf(char const *fmt, ...);
 isize rwlj_eprintfln(char const *fmt, ...);
 
-isize rwlj_printf(char const *fmt, ...);
-isize rwlj_printfln(char const *fmt, ...);
+isize rwlj_fprint(rwljFile_Descriptor fd, rwljString s);
+isize rwlj_fprintln(rwljFile_Descriptor fd, rwljString s);
+isize rwlj_print(rwljString s);
+isize rwlj_println(rwljString s);
+isize rwlj_eprint(rwljString s);
+isize rwlj_eprintln(rwljString s);
 
 typedef struct rwljString_Builder {
     char *buf;
@@ -588,75 +642,6 @@ rwljString rwlj_sbprintf(rwljString_Builder *sb, char const *fmt, ...);
 rwljString rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...);
 
 /*
- *  Algorithms
- */
-
-void rwlj_quick_sort(void *data, isize len, isize elem_size);
-void rwlj_insertion_sort(void *data, isize len, isize elem_size);
-
-/*
- *  Testing
- */
-
-#define DESCRIBE(string)                                                       \
-    do {                                                                       \
-        rwlj_printfln(                                                         \
-            "----------------------------------------------------------------" \
-            "----------------"                                                 \
-        );                                                                     \
-        rwlj_printfln(string);                                                 \
-        rwlj_printfln(                                                         \
-            "----------------------------------------------------------------" \
-            "----------------"                                                 \
-        );                                                                     \
-    } while (false)
-
-#define IT(string)                                                             \
-    for (bool has_ended = false, success = true;                               \
-         !has_ended && rwlj_printfln("[%d] - " string "...", RWLJ_COUNTER);    \
-         has_ended = true,                                                     \
-              success ? rwlj_printfln("\tOK") : rwlj_printfln("\tfailed"))
-
-#define __rwlj_testing_printf_info()                                           \
-    rwlj_printf("[%s:%d:%s()]: ", RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
-
-#define rwlj_testing_printf(...)                                               \
-    do {                                                                       \
-        __rwlj_testing_printf_info();                                          \
-        rwlj_printfln(__VA_ARGS__);                                            \
-    } while (false)
-
-#define rwlj_testing_expect(condition)                                         \
-    do {                                                                       \
-        if (!(condition)) {                                                    \
-            rwlj_testing_printf("Expected %s to be true", #condition);         \
-            success = false;                                                   \
-        }                                                                      \
-    } while (false)
-
-#define rwlj_testing_expect_value(a, b)                                        \
-    do {                                                                       \
-        if (a != b) {                                                          \
-            rwlj_testing_printf("Expected %s, got %s", #b, #a);                \
-            success = false;                                                   \
-        }                                                                      \
-    } while (false)
-
-#define rwlj_testing_expect_string(a, b)                                       \
-    do {                                                                       \
-        if (!rwlj_string_are_equal(a, b)) {                                    \
-            rwlj_testing_printf(                                               \
-                "Expected %.*s, got %.*s",                                     \
-                cast(i32) a.len,                                               \
-                a.data,                                                        \
-                cast(i32) b.len,                                               \
-                b.data                                                         \
-            );                                                                 \
-            success = false;                                                   \
-        }                                                                      \
-    } while (false)
-
-/*
  *
  *  IMPLEMENTATION
  *
@@ -666,8 +651,7 @@ void rwlj_insertion_sort(void *data, isize len, isize elem_size);
  *  Math
  */
 
-// Snatched most of things from Odin. Holy moly I wanna get better at
-// floating-point stuff
+// Snatched most of things from Odin
 
 rwljFloat_Class
 rwlj_is_inf(f64 f)
@@ -740,10 +724,10 @@ rwlj_ldexp(f64 mantissa, i64 exponent)
     exp += ((f.i >> RWLJ_F64_SHIFT) & RWLJ_F64_MASK) - RWLJ_F64_BIAS;
     if (exp < -(RWLJ_F64_BIAS + RWLJ_F64_SHIFT)) {
         // Underflow
-        return (man < 0) ? -0.0 : +0.0;
+        return man < 0 ? -0.0 : +0.0;
     } else if (exp > RWLJ_F64_BIAS) {
         // Overflow
-        return (f.f < 0) ? -RWLJ_INFINITY : RWLJ_INFINITY;
+        return f.f < 0 ? -RWLJ_INFINITY : RWLJ_INFINITY;
     }
 
     f64 m = 1;
@@ -755,6 +739,52 @@ rwlj_ldexp(f64 mantissa, i64 exponent)
     f.i |= (exp + RWLJ_F64_BIAS) << RWLJ_F64_SHIFT;
 
     return m * f.f;
+}
+
+/*
+ *  Algorithms
+ */
+
+void
+rwlj_sort(void *data, isize len, isize elem_size)
+{
+    if (len == 0 || elem_size == 0 || data == NULL) {
+        return;
+    }
+
+    rwlj_no_op();
+}
+
+void
+rwlj_sort_proc(void *data, isize len, isize elem_size, rwljSort_Proc proc)
+{
+    if (len == 0 || elem_size == 0 || data == NULL || proc == NULL) {
+        return;
+    }
+
+    rwlj_no_op();
+}
+
+void
+rwlj_quick_sort(void *data, isize len, isize elem_size)
+{
+    if (len == 0 || elem_size == 0 || data == NULL) {
+        return;
+    }
+
+    for (isize i = 0; i < len; i += 1) {
+        rwlj_no_op();
+    }
+}
+
+void
+rwlj_insertion_sort(void *data, isize len, isize elem_size)
+{
+    if (len == 0 || elem_size == 0 || data == NULL) {
+        return;
+    }
+
+    rwlj_no_op();
 }
 
 /*
@@ -811,7 +841,7 @@ rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment)
     }
 
     void *allocation = &arena->backing_buf[arena->allocated_size];
-    memset(allocation, 0, allocation_size);
+    rwlj_memory_zero(allocation, allocation_size);
     arena->allocated_size = allocation_offset;
 
     return allocation;
@@ -903,33 +933,35 @@ __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity)
     }
 
     void *curr_data = array->data;
-    isize array_new_cap = new_capacity;
-    usize array_new_size = cast(usize) array_new_cap * array->item_size;
+    usize array_curr_size = cast(usize) array->capacity * array->item_size;
+    isize array_new_capacity = new_capacity;
+    usize array_new_size = cast(usize) array_new_capacity * array->item_size;
 
     usize arena_new_allocated_size =
-        array->arena->allocated_size -
-        (cast(usize) array->capacity * array->item_size) + array_new_size;
+        array->arena->allocated_size - array_curr_size + array_new_size;
     if (arena_new_allocated_size > array->arena->total_size) {
         usize rest = array->arena->total_size - array->arena->allocated_size;
-        array_new_cap = array->capacity + cast(isize)(rest / array->item_size);
+        array_new_capacity =
+            array->capacity + cast(isize)(rest / array->item_size);
 
         // Array doesn't get resized
-        if (array_new_cap == array->capacity) {
+        if (array_new_capacity == array->capacity) {
             return false;
         }
-        array_new_size = cast(usize) array_new_cap * array->item_size;
+        array_new_size = cast(usize) array_new_capacity * array->item_size;
     }
 
     array->data = rwlj_arena_resize(
-        array->arena, array->data, cast(usize) array->capacity, array_new_size
+        array->arena, array->data, array_curr_size, array_new_size
     );
-    array->capacity = array_new_cap;
+    rwlj_assert(array->data != NULL);
+
+    array->capacity = array_new_capacity;
     if (array->data != curr_data) {
-        memmove(
+        rwlj_memory_move(
             array->data, curr_data, cast(usize) array->len * array->item_size
         );
     }
-    rwlj_assert(array->data != NULL);
 
     return true;
 }
@@ -969,7 +1001,7 @@ rwlj_string_clone(rwljString s, rwljArena *arena)
         return cloned;
     }
     cloned.len = s.len;
-    memcpy(cloned.data, s.data, cast(usize) s.len);
+    rwlj_memory_copy(cloned.data, s.data, cast(usize) s.len);
 
     return cloned;
 }
@@ -980,7 +1012,7 @@ rwlj_string_cstrlen(char const *string, isize max_len)
     char *s = cast(char *) string;
     isize len = 0;
 
-    while (*s && len < max_len) {
+    while (s[0] && len < max_len) {
         len += 1;
         s = &s[1];
     }
@@ -1066,31 +1098,29 @@ isize
 rwlj_format_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
 {
     isize bytes_written = 0;
-    isize base = 0;
+    isize base = 10;
     switch (fmt) {
-    case 'i':
-    case 'd':
-        base = 10;
+    case 'e':
+    case 'f':
+    case 'g':
         break;
     case 'A':
     case 'a':
         base = 16;
-        break;
-    default:
-        rwlj_assert_msg(
-            false, "Base not implemented for floating-point numbers"
-        );
-    }
-    if (base != 10) {
         if (rwlj_slice_set(&buf, bytes_written, '0')) {
             bytes_written += 1;
         }
         if (rwlj_slice_set(&buf, bytes_written, fmt)) {
             bytes_written += 1;
         }
+        break;
+    default:
+        rwlj_assert_msg(
+            false, "Base not implemented for floating-point numbers"
+        );
     }
 
-    if (rwlj_is_inf(number)) {
+    if (rwlj_abs(number) != 0 && rwlj_is_inf(number)) {
         if (rwlj_slice_set(&buf, bytes_written, number > 0 ? '+' : '-')) {
             bytes_written += 1;
         }
@@ -1104,7 +1134,7 @@ rwlj_format_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
 
         return bytes_written;
     } else if (rwlj_is_nan(number)) {
-        rwljString nan = STR_LIT("nan");
+        rwljString nan = STR_LIT("NaN");
         for (isize i = 0; i < nan.len; i += 1) {
             if (rwlj_slice_set(&buf, bytes_written, cast(u8) nan.data[i])) {
                 bytes_written += 1;
@@ -1120,7 +1150,9 @@ rwlj_format_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
     i64 exp = 0;
     f64 fr = rwlj_frexp(number, &exp);
     i64 man = (i64)(fr * (1l << (RWLJ_F64_SHIFT + 1)));
-    exp -= (RWLJ_F64_SHIFT + 1);
+    if (rwlj_abs(number) != 0) {
+        exp -= (RWLJ_F64_SHIFT + 1);
+    }
 
     bytes_written = rwlj_format_i64(buf, man);
     for (; exp > 0; exp -= 1) {
@@ -1162,67 +1194,84 @@ rwlj_format_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
             x %= 2;
         }
     }
-    if (bytes_written > precision) {
-        bool zeroed = true;
-        for (isize i = precision + 1; i < bytes_written; i += 1) {
-            if (buf.data[i] != '0') {
-                zeroed = false;
-                break;
+    if (fmt == 'e' || precision > 0) {
+        if (bytes_written > precision) {
+            bool zeroed = true;
+            for (isize i = precision + 1; i < bytes_written; i += 1) {
+                if (buf.data[i] != '0') {
+                    zeroed = false;
+                    break;
+                }
             }
+            if (buf.data[precision] > '5' ||
+                (buf.data[precision] == '5' &&
+                 (!zeroed || buf.data[precision - 1] % 2 == 1))) {
+                i64 i = precision - 1;
+                for (; i >= 0 && buf.data[i] == '9'; i -= 1) {
+                    buf.data[i] = '0';
+                }
+                if (i >= 0) {
+                    buf.data[i] += 1;
+                } else {
+                    buf.data[0] = '1';
+                    decimal_point += 1;
+                }
+            }
+            bytes_written = precision;
         }
-        if (buf.data[precision] >= '5' &&
-            (!zeroed || buf.data[precision - 1] % 2 == 1)) {
-            i64 i = precision - 1;
-            for (; i >= 0 && buf.data[i] == '9'; i -= 1) {
-                buf.data[i] = '0';
-            }
-            if (i >= 0) {
-                buf.data[i] += 1;
-            } else {
-                buf.data[0] = '1';
-                decimal_point += 1;
-            }
+        for (; bytes_written < precision; bytes_written += 1) {
+            buf.data[bytes_written] = '0';
         }
-        bytes_written = precision;
-    }
-    for (; bytes_written < precision; bytes_written += 1) {
-        buf.data[bytes_written] = '0';
     }
 
     switch (fmt) {
+    // TODO: Fix this
     case 'F':
     case 'f': {
-        isize offset = decimal_point;
-        memmove(
+        if (precision <= 0) {
+            break;
+        }
+
+        isize offset = rwlj_max(decimal_point, 1);
+        rwlj_memory_move(
             &buf.data[offset + 1], &buf.data[offset], cast(usize) precision
         );
+        bytes_written += 1;
         buf.data[offset] = '.';
-        isize end = (offset + 1 + precision);
-        memset(
-            &buf.data[offset + 1 + precision],
-            0,
-            cast(usize)(bytes_written - end)
+        rwlj_memory_zero(
+            &buf.data[bytes_written], cast(usize)(buf.len - bytes_written)
         );
         break;
     }
     case 'E':
     case 'e': {
-        isize offset = decimal_point;
-        memmove(
-            &buf.data[offset + 1], &buf.data[offset], cast(usize) precision
-        );
-        buf.data[offset] = '.';
-        isize end = (offset + 1 + precision);
-        memset(
-            &buf.data[offset + 1 + precision],
-            0,
-            cast(usize)(bytes_written - end)
+        bytes_written = rwlj_max(bytes_written, 1);
+        rwlj_memory_move(&buf.data[2], &buf.data[1], cast(usize) bytes_written);
+        bytes_written += 1;
+        buf.data[1] = '.';
+        if (rwlj_slice_set(&buf, bytes_written, 'e')) {
+            bytes_written += 1;
+        }
+        decimal_point -= 1;
+        if (rwlj_slice_set(
+                &buf, bytes_written, decimal_point >= 0 ? '+' : '-'
+            )) {
+            bytes_written += 1;
+        }
+        decimal_point = rwlj_abs(decimal_point);
+        if (decimal_point < 9 && rwlj_slice_set(&buf, bytes_written, '0')) {
+            bytes_written += 1;
+        }
+        bytes_written += rwlj_format_i64(
+            (rwljSlice_U8){ &buf.data[bytes_written], buf.len - bytes_written },
+            decimal_point
         );
         break;
     }
     // TODO: to be implemented
     case 'G':
     case 'g': {
+        rwlj_assert_fail("TO BE IMPLEMENTED");
     }
     }
 
@@ -1236,7 +1285,7 @@ rwlj_format_string(rwljSlice_String buf, rwljString str)
     if (len == 0 || buf.data == NULL || str.data == NULL) {
         return 0;
     }
-    memcpy(buf.data, str.data, cast(usize) len);
+    rwlj_memory_copy(buf.data, str.data, cast(usize) len);
 
     return len;
 }
@@ -1287,6 +1336,8 @@ __rwlj_bprintf_va(
             continue;
         }
         i += 1;
+
+        // TODO: add conversion specifier limit (64?)
 
         // Parse flags
         for (; i < buf.len; i += 1) {
@@ -1357,9 +1408,17 @@ __rwlj_bprintf_va(
             }
         }
 
-        u8 conv_buf[1024] = { 0 };
+        u8 conv_buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 conv_slice = { .data = conv_buf,
                                     .len = rwlj_size_of_array(conv_buf) };
+
+        // TODO: Oh, just thought about printing arrays *recursively* (it'll be
+        // 1 depth so it'll be fine)
+        // Just need to make the distinction between primitive data types and
+        // arrays (print arrays with a loop using bprintf with fprintf's buffer)
+        // Unfortunately it doesn't "scale" well (will need to add new
+        // conversion specifiers for each new type), so I guess the next step is
+        // providing a custom callback for those
 
         // Parse conversion specifiers
         isize conv_bytes_written = 0;
@@ -1368,10 +1427,6 @@ __rwlj_bprintf_va(
             u64 u;
         } value = { 0 };
 
-#pragma GCC diagnostic ignored "-Wanalyzer-va-arg-type-mismatch"
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wanalyzer-va-list-exhausted"
-#pragma GCC diagnostic push
         switch (string[i]) {
         case 'd':
         case 'i':
@@ -1444,14 +1499,11 @@ __rwlj_bprintf_va(
             continue;
         }
         case 'S': {
-            rwljString *s = va_arg(ap, void *);
-            if (s == NULL) {
-                continue;
-            }
+            rwljString s = va_arg(ap, rwljString);
             bytes_written += rwlj_format_string(
                 (rwljSlice_String){ &buf.data[bytes_written],
                                     buf.len - bytes_written },
-                *s
+                s
             );
             continue;
         }
@@ -1472,8 +1524,6 @@ __rwlj_bprintf_va(
             }
             continue;
         }
-#pragma GCC diagnostic pop
-#pragma GCC diagnostic pop
 
         if (state.flags.blank && conv_slice.data[0] != '-') {
             if (rwlj_slice_set(&buf, bytes_written, ' ')) {
@@ -1497,7 +1547,8 @@ __rwlj_bprintf_va(
 
         isize offset = conv_bytes_written + bytes_written;
         isize bytes_to_copy = rwlj_min(conv_bytes_written, buf.len - offset);
-        memcpy(
+
+        rwlj_memory_copy(
             &buf.data[bytes_written], conv_slice.data, cast(usize) bytes_to_copy
         );
         bytes_written += bytes_to_copy;
@@ -1545,7 +1596,12 @@ rwlj_bprintfln(rwljSlice_String buf, char const *fmt, ...)
 
 // TODO: make this thread-safe
 isize
-__rwlj_fprintf_va(i32 fd, bool has_new_line, char const *fmt, va_list ap)
+__rwlj_fprintf_va(
+    rwljFile_Descriptor fd,
+    bool has_new_line,
+    char const *fmt,
+    va_list ap
+)
 {
     rwlj_persistent char buf[4096] = { 0 };
     rwljSlice_String buf_slice = { .data = buf,
@@ -1556,7 +1612,7 @@ __rwlj_fprintf_va(i32 fd, bool has_new_line, char const *fmt, va_list ap)
 }
 
 isize
-rwlj_fprintf(i32 fd, char const *fmt, ...)
+rwlj_fprintf(rwljFile_Descriptor fd, char const *fmt, ...)
 {
     va_list ap;
 
@@ -1568,7 +1624,7 @@ rwlj_fprintf(i32 fd, char const *fmt, ...)
 }
 
 isize
-rwlj_fprintfln(i32 fd, char const *fmt, ...)
+rwlj_fprintfln(rwljFile_Descriptor fd, char const *fmt, ...)
 {
     va_list ap;
 
@@ -1625,6 +1681,54 @@ rwlj_printfln(char const *fmt, ...)
     va_end(ap);
 
     return len;
+}
+
+isize
+rwlj_fprint(rwljFile_Descriptor fd, rwljString s)
+{
+    if (write(fd, s.data, cast(usize) s.len) == -1) {
+        return 0;
+    }
+
+    return s.len;
+}
+
+isize
+rwlj_fprintln(rwljFile_Descriptor fd, rwljString s)
+{
+    if (!rwlj_fprint(fd, s)) {
+        return 0;
+    }
+
+    if (write(fd, "\n", 1) == -1) {
+        return 0;
+    }
+
+    return s.len + 1;
+}
+
+isize
+rwlj_print(rwljString s)
+{
+    return rwlj_fprint(RWLJ_STDOUT, s);
+}
+
+isize
+rwlj_println(rwljString s)
+{
+    return rwlj_fprintln(RWLJ_STDOUT, s);
+}
+
+isize
+rwlj_eprint(rwljString s)
+{
+    return rwlj_fprint(RWLJ_STDERR, s);
+}
+
+isize
+rwlj_eprintln(rwljString s)
+{
+    return rwlj_fprintln(RWLJ_STDERR, s);
 }
 
 void
@@ -1748,6 +1852,164 @@ rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...)
 
     return (rwljString){ &sb->buf[start], sb->len - start };
 }
+
+/*
+ *  Testing
+ */
+
+#define DESCRIBE(string)                                                       \
+    do {                                                                       \
+        rwlj_println(STR_LIT(                                                  \
+            "----------------------------------------------------------------" \
+            "----------------"                                                 \
+        ));                                                                    \
+        rwlj_println(STR_LIT(string));                                         \
+        rwlj_println(STR_LIT(                                                  \
+            "----------------------------------------------------------------" \
+            "----------------"                                                 \
+        ));                                                                    \
+    } while (false)
+
+#define IT(string)                                                             \
+    for (bool loop = true, success = true;                                     \
+         loop && rwlj_printfln("[%d] - " string "...", RWLJ_COUNTER);          \
+         loop = false,                                                         \
+              success ? rwlj_no_op() : rwlj_println(STR_LIT("FAILED")))
+
+#define rwlj_testing_printf_info()                                             \
+    rwlj_printf("\t[%s:%d:%s()]: ", RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
+
+#define rwlj_testing_printf(...)                                               \
+    do {                                                                       \
+        rwlj_testing_printf_info();                                            \
+        rwlj_printfln(__VA_ARGS__);                                            \
+    } while (false)
+
+#define rwlj_testing_expect(condition)                                         \
+    do {                                                                       \
+        if (!(condition)) {                                                    \
+            rwlj_testing_printf("Expected %s to be true", #condition);         \
+            success = false;                                                   \
+        }                                                                      \
+    } while (false)
+
+// A lot of this mess is due to the fact that _Generic only accepts functions
+// and not macros (rightfully so, although it doesn't expand those that are
+// aliases)
+// I wonder if you could pass a macro to some sort of _Generic-equivalent in Jai
+// (but probably there wouldn't be a need to such a thing in the first place)
+bool
+__rwlj_testing_expect_value_i64(
+    i64 a,
+    i64 b,
+    char const *file,
+    int line,
+    char const *proc
+)
+{
+    if (a != b) {
+        rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
+        rwlj_printfln("Expected %ld, got %ld", b, a);
+        return false;
+    }
+
+    return true;
+}
+
+#define rwlj_testing_expect_value_i64(a, b)                                    \
+    __rwlj_testing_expect_value_i64(a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
+
+bool
+__rwlj_testing_expect_value_u64(
+    u64 a,
+    u64 b,
+    char const *file,
+    int line,
+    char const *proc
+)
+{
+    if (a != b) {
+        rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
+        rwlj_printfln("Expected %lu, got %lu", b, a);
+        return false;
+    }
+
+    return true;
+}
+
+#define rwlj_testing_expect_value_u64(a, b)                                    \
+    __rwlj_testing_expect_value_u64(a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
+
+bool
+__rwlj_testing_expect_value_f64(
+    f64 a,
+    f64 b,
+    char const *file,
+    int line,
+    char const *proc
+)
+{
+    if (a != b) {
+        rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
+        rwlj_printfln("Expected %f, got %f", b, a);
+        return false;
+    }
+
+    return true;
+}
+
+#define rwlj_testing_expect_value_f64(a, b)                                    \
+    __rwlj_testing_expect_value_f64(a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
+
+bool
+__rwlj_testing_expect_value_string(
+    rwljString a,
+    rwljString b,
+    char const *file,
+    int line,
+    char const *proc
+)
+{
+    if (!rwlj_string_are_equal(a, b)) {
+        rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
+        rwlj_printfln("Expected %S, got %S", b, a);
+        return false;
+    }
+
+    return true;
+}
+
+#define rwlj_testing_expect_value_string(a, b)                                 \
+    __rwlj_testing_expect_value_string(                                        \
+        a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                              \
+    )
+
+#define rwlj_testing_expect_value_symbol(a, b)                                 \
+    do {                                                                       \
+        if (a != b) {                                                          \
+            rwlj_testing_printf("Expected %s, got %s", #b, #a);                \
+            success = false;                                                   \
+        }                                                                      \
+    } while (false)
+
+// clang-format off
+#define __rwlj_testing_expect_value(a, b, file, line, proc)                    \
+    _Generic((a),                                                              \
+    i64: __rwlj_testing_expect_value_i64,                                      \
+    u64: __rwlj_testing_expect_value_u64,                                      \
+    f64: __rwlj_testing_expect_value_f64,                                      \
+    rwljString: __rwlj_testing_expect_value_string                             \
+)(a, b, file, line, proc)
+// clang-format on
+
+#define rwlj_testing_expect_value(a, b)                                        \
+    do {                                                                       \
+        if (!__rwlj_testing_expect_value(                                      \
+                a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                      \
+            )) {                                                               \
+            success = false;                                                   \
+        }                                                                      \
+    } while (false)
 
 #define RWLJ_IMPLEMENTATION
 
