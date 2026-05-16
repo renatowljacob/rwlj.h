@@ -57,3 +57,4 @@ dkms.conf
 main.c
 Session.vim
 main
+*.bkp

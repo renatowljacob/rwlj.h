@@ -1,10 +1,95 @@
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
+#include <string.h>
+
+#define STB_SPRINTF_IMPLEMENTATION
+#include "vendor/stb_sprintf.h"
 
 #define RWLJ_IMPLEMENTATION
 #include "rwlj.h"
 
 typedef void (*rwljTest_Proc)(void);
+
+void
+test_math(void)
+{
+    DESCRIBE("math procedures tests");
+
+    IT("Identifies infinity")
+    {
+        rwlj_testing_expect(rwlj_is_inf(RWLJ_INFINITY));
+        rwlj_testing_expect(rwlj_is_inf(-RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_inf(0.0));
+        rwlj_testing_expect(!rwlj_is_inf(-0.0));
+        rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MAX));
+        rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MIN));
+        rwlj_testing_expect(!rwlj_is_inf(RWLJ_NAN));
+    }
+
+    IT("Identifies NaNs")
+    {
+        rwlj_testing_expect(rwlj_is_nan(RWLJ_NAN));
+        rwlj_testing_expect(!rwlj_is_nan(RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_nan(-RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_nan(0.0));
+        rwlj_testing_expect(!rwlj_is_nan(-0.0));
+        rwlj_testing_expect(!rwlj_is_nan(RWLJ_F64_MAX));
+        rwlj_testing_expect(!rwlj_is_nan(RWLJ_F64_MIN));
+    }
+
+    f64 min_subnormal = 4.94065645841246544177e-324;
+    f64 max_subnormal = 2.22507385850720088902e-308;
+    IT("Identifies subnormals")
+    {
+        rwlj_testing_expect(rwlj_is_subnormal(0.0));
+        rwlj_testing_expect(rwlj_is_subnormal(-0.0));
+        rwlj_testing_expect(rwlj_is_subnormal(min_subnormal));
+        rwlj_testing_expect(rwlj_is_subnormal(max_subnormal));
+        rwlj_testing_expect(rwlj_is_subnormal(-min_subnormal));
+        rwlj_testing_expect(rwlj_is_subnormal(-max_subnormal));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_NAN));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_subnormal(-RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MAX));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MIN));
+        rwlj_testing_expect(!rwlj_is_subnormal(3.14159265));
+    }
+
+    IT("Classifies floats correctly")
+    {
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_NAN), RWLJ_FLOAT_CLASS_NAN
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(-RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(min_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(max_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(-min_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(-max_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_F64_MIN), RWLJ_FLOAT_CLASS_NORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(3.14159265), RWLJ_FLOAT_CLASS_NORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_F64_MAX), RWLJ_FLOAT_CLASS_NORMAL
+        );
+    }
+}
 
 void
 test_arena(void)
@@ -15,7 +100,7 @@ test_arena(void)
     {
         rwljArena arena = { 0 };
         usize arena_total_size = rwlj_mb(8);
-        rwlj_arena_init_growing_size(&arena, arena_total_size);
+        rwlj_arena_init_growing(&arena, arena_total_size);
 
         rwlj_testing_expect(arena.backing_buf != NULL);
         rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_GROWING);
@@ -28,7 +113,7 @@ test_arena(void)
     {
         rwljArena arena = { 0 };
         usize arena_total_size = rwlj_mb(1);
-        rwlj_arena_init_static_size(&arena, arena_total_size);
+        rwlj_arena_init_static(&arena, arena_total_size);
 
         rwlj_testing_expect(arena.backing_buf != NULL);
         rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_STATIC);
@@ -783,160 +868,475 @@ test_formatting(void)
 {
     DESCRIBE("Formatting tests");
 
+    IT("Prints text")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        rwljString string = { cast(char *) buf_slice.data,
+                              rwlj_bprintf(buf_slice, "Hello, World!") };
+        rwljString expected = STR_LIT("Hello, World!");
+        rwlj_testing_expect_value(string, expected);
+    }
+
+    IT("Prints nothing")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        rwljString string = { cast(char *) buf_slice.data,
+                              rwlj_bprintf(buf_slice, "") };
+        rwljString expected = STR_LIT("");
+        rwlj_testing_expect_value(string, expected);
+    }
+
+    IT("Prints the whole buffer")
+    {
+#define STRING                                                                 \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+        u8 buf[rwlj_kb(1) / 8] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        for (isize i = 0; i < buf_slice.len; i += 1) {
+            buf_slice.data[i] = 'a';
+        }
+
+        rwljString string = { cast(char *) buf_slice.data,
+                              rwlj_bprintf(buf_slice, STRING) };
+        rwljString expected = STR_LIT(STRING);
+        rwlj_testing_expect_value(string, expected);
+#undef STRING
+    }
+
+    IT("Prints and doesn't go beyong buffer")
+    {
+#define STRING                                                                 \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+#define BUF_LEN (rwlj_kb(1) / 16)
+
+        u8 buf[BUF_LEN] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        for (isize i = 0; i < buf_slice.len; i += 1) {
+            buf_slice.data[i] = 'a';
+        }
+
+        rwljString string = { cast(char *) buf_slice.data,
+                              rwlj_bprintf(buf_slice, STRING) };
+        rwljString expected = { STRING, BUF_LEN };
+        rwlj_testing_expect_value(string, expected);
+#undef BUF_LEN
+#undef STRING
+    }
+
+    IT("Formats signed integer")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        {
+            isize value = RWLJ_I64_MIN;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%ld|", value) };
+            rwljString expected = STR_LIT("|-9223372036854775808|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = RWLJ_I64_MAX;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%ld|", value) };
+            rwljString expected = STR_LIT("|9223372036854775807|");
+            rwlj_testing_expect_value(string, expected);
+        }
+    }
+
+    IT("Formats unsigned integer")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        {
+            usize value = RWLJ_U64_MIN;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%lu|", value) };
+            rwljString expected = STR_LIT("|0|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            usize value = RWLJ_U64_MAX;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%lu|", value) };
+            rwljString expected = STR_LIT("|18446744073709551615|");
+            rwlj_testing_expect_value(string, expected);
+        }
+    }
+
     typedef struct rwljF64_Test {
-        i64 precision;
-        f64 f;
-        rwljString expected;
+        char *fmt;
+        f64 value;
     } rwljF64_Test;
 
-    IT("Formats NaN")
+    // Table 3: Stress Inputs for Converting 53-bit Binary to Decimal, <
+    // 1/2 ULP
+    // Table 4: Stress Inputs for Converting 53-bit Binary to Decimal, >
+    // 1/2 ULP
+#define F64_TEST_TABLE(fmt)                                                    \
+    { "%.0" #fmt, ldexp(8511030020275656.0, -342) },                           \
+        { "%.1" #fmt, ldexp(5201988407066741.0, -824) },                       \
+        { "%.2" #fmt, ldexp(6406892948269899.0, +237) },                       \
+        { "%.3" #fmt, ldexp(8431154198732492.0, +72) },                        \
+        { "%.4" #fmt, ldexp(6475049196144587.0, +99) },                        \
+        { "%.5" #fmt, ldexp(8274307542972842.0, +726) },                       \
+        { "%.6" #fmt, ldexp(5381065484265332.0, -456) },                       \
+        { "%.7" #fmt, ldexp(6761728585499734.0, -1057) },                      \
+        { "%.8" #fmt, ldexp(7976538478610756.0, +376) },                       \
+        { "%.9" #fmt, ldexp(5982403858958067.0, +377) },                       \
+        { "%.10" #fmt, ldexp(5536995190630837.0, +93) },                       \
+        { "%.11" #fmt, ldexp(7225450889282194.0, +710) },                      \
+        { "%.12" #fmt, ldexp(7225450889282194.0, +709) },                      \
+        { "%.13" #fmt, ldexp(8703372741147379.0, +117) },                      \
+        { "%.14" #fmt, ldexp(8944262675275217.0, -1001) },                     \
+        { "%.15" #fmt, ldexp(7459803696087692.0, -707) },                      \
+        { "%.16" #fmt, ldexp(6080469016670379.0, -381) },                      \
+        { "%.17" #fmt, ldexp(8385515147034757.0, +721) },                      \
+        { "%.18" #fmt, ldexp(7514216811389786.0, -828) },                      \
+        { "%.19" #fmt, ldexp(8397297803260511.0, -345) },                      \
+        { "%.20" #fmt, ldexp(6733459239310543.0, +202) },                      \
+        { "%.21" #fmt, ldexp(8091450587292794.0, -473) },                      \
+        { "%.0" #fmt, ldexp(6567258882077402.0, +952) },                       \
+        { "%.1" #fmt, ldexp(6712731423444934.0, +535) },                       \
+        { "%.2" #fmt, ldexp(6712731423444934.0, +534) },                       \
+        { "%.3" #fmt, ldexp(5298405411573037.0, -957) },                       \
+        { "%.4" #fmt, ldexp(5137311167659507.0, -144) },                       \
+        { "%.5" #fmt, ldexp(6722280709661868.0, +363) },                       \
+        { "%.6" #fmt, ldexp(5344436398034927.0, -169) },                       \
+        { "%.7" #fmt, ldexp(8369123604277281.0, -853) },                       \
+        { "%.8" #fmt, ldexp(8995822108487663.0, -780) },                       \
+        { "%.9" #fmt, ldexp(8942832835564782.0, -383) },                       \
+        { "%.10" #fmt, ldexp(8942832835564782.0, -384) },                      \
+        { "%.11" #fmt, ldexp(8942832835564782.0, -385) },                      \
+        { "%.12" #fmt, ldexp(6965949469487146.0, -249) },                      \
+        { "%.13" #fmt, ldexp(6965949469487146.0, -250) },                      \
+        { "%.14" #fmt, ldexp(6965949469487146.0, -251) },                      \
+        { "%.15" #fmt, ldexp(7487252720986826.0, +548) },                      \
+        { "%.16" #fmt, ldexp(5592117679628511.0, +164) },                      \
+        { "%.17" #fmt, ldexp(8887055249355788.0, +665) },                      \
+        { "%.18" #fmt, ldexp(6994187472632449.0, +690) },                      \
+        { "%.19" #fmt, ldexp(8797576579012143.0, +588) },                      \
+        { "%.20" #fmt, ldexp(7363326733505337.0, +272) },                      \
+        { "%.21" #fmt, ldexp(8549497411294502.0, -448) },
+
+    IT("Formats floats with f")
     {
-        u8 buf[32] = { 0 };
+        rwljF64_Test tests[] = { F64_TEST_TABLE(f) };
 
-        rwljSlice_U8 slice = { buf, rwlj_size_of_buf(buf) };
-        rwljString result = { .data = cast(char *) slice.data,
-                              .len = rwlj_format_f64(slice, RWLJ_NAN, 'g', 0) };
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
 
-        rwljString expected = STR_LIT("NaN");
-        rwlj_testing_expect_value(result, expected);
-    }
-
-    IT("Formats Infinity")
-    {
-        {
-            u8 buf[32] = { 0 };
-
-            rwljSlice_U8 slice = { buf, rwlj_size_of_buf(buf) };
-            rwljString result = {
-                .data = cast(char *) slice.data,
-                .len = rwlj_format_f64(slice, RWLJ_INFINITY, 'g', 0)
-            };
-
-            rwljString expected = STR_LIT("+inf");
-            rwlj_testing_expect_value(result, expected);
-        }
-        {
-            u8 buf[32] = { 0 };
-
-            rwljSlice_U8 slice = { buf, rwlj_size_of_buf(buf) };
-            rwljString result = {
-                .data = cast(char *) slice.data,
-                .len = rwlj_format_f64(slice, -RWLJ_INFINITY, 'g', 0)
-            };
-
-            rwljString expected = STR_LIT("-inf");
-            rwlj_testing_expect_value(result, expected);
-        }
-    }
-
-    IT("Formats floats using 'e' specifier")
-    {
-        // clang-format off
-        rwljF64_Test tests[] = {
-            {0,  rwlj_ldexp(8511030020275656, -342),  STR_LIT("1.e-87")},
-            {1,  rwlj_ldexp(5201988407066741, -824),  STR_LIT("5.e-233")},
-            {2,  rwlj_ldexp(6406892948269899, +237),  STR_LIT("1.4e+87")},
-            {3,  rwlj_ldexp(8431154198732492, +72),   STR_LIT("3.98e+37")},
-            {4,  rwlj_ldexp(6475049196144587, +99),   STR_LIT("4.104e+45")},
-            {5,  rwlj_ldexp(8274307542972842, +726),  STR_LIT("2.9208e+234")},
-            {6,  rwlj_ldexp(5381065484265332, -456),  STR_LIT("2.89195e-122")},
-            {7,  rwlj_ldexp(6761728585499734, -1057), STR_LIT("4.378772e-303")},
-            {8,  rwlj_ldexp(7976538478610756, +376),  STR_LIT("1.2277016e+129")},
-            {9,  rwlj_ldexp(5982403858958067, +377),  STR_LIT("1.84155245e+129")},
-            {10, rwlj_ldexp(5536995190630837, +93),   STR_LIT("5.483574435e+43")},
-            {11, rwlj_ldexp(7225450889282194, +710),  STR_LIT("3.8919018115e+229")},
-            {12, rwlj_ldexp(7225450889282194, +709),  STR_LIT("1.94595090573e+229")},
-            {13, rwlj_ldexp(8703372741147379, +117),  STR_LIT("1.446095838161e+51")},
-            {14, rwlj_ldexp(8944262675275217, -1001), STR_LIT("4.1736774745853e-286")},
-            {15, rwlj_ldexp(7459803696087692, -707),  STR_LIT("1.10795077287889e-197")},
-            {16, rwlj_ldexp(6080469016670379, -381),  STR_LIT("1.234550136632744e-99")},
-            {17, rwlj_ldexp(8385515147034757, +721),  STR_LIT("9.2503171196036502e+232")},
-            {18, rwlj_ldexp(7514216811389786, -828),  STR_LIT("4.19804715028488984e-234")},
-            {19, rwlj_ldexp(8397297803260511, -345),  STR_LIT("1.171631531978651105e-88")},
-            {20, rwlj_ldexp(6733459239310543, +202),  STR_LIT("4.3281007284461249363e+76")},
-            {21, rwlj_ldexp(8091450587292794, -473),  STR_LIT("3.31771011816003108152e-127")},
-            {0,  rwlj_ldexp(6567258882077402, +952),  STR_LIT("2.e+302")},
-            {1,  rwlj_ldexp(6712731423444934, +535),  STR_LIT("8.e+176")},
-            {2,  rwlj_ldexp(6712731423444934, +534),  STR_LIT("3.8e+176")},
-            {3,  rwlj_ldexp(5298405411573037, -957),  STR_LIT("4.35e-273")},
-            {4,  rwlj_ldexp(5137311167659507, -144),  STR_LIT("2.304e-28")},
-            {5,  rwlj_ldexp(6722280709661868, +363),  STR_LIT("1.2630e+125")},
-            {6,  rwlj_ldexp(5344436398034927, -169),  STR_LIT("7.14221e-36")},
-            {7,  rwlj_ldexp(8369123604277281, -853),  STR_LIT("1.393457e-241")},
-            {8,  rwlj_ldexp(8995822108487663, -780),  STR_LIT("1.4146345e-219")},
-            {9,  rwlj_ldexp(8942832835564782, -383),  STR_LIT("4.53927792e-100")},
-            {10, rwlj_ldexp(8942832835564782, -384),  STR_LIT("2.269638960e-100")},
-            {11, rwlj_ldexp(8942832835564782, -385),  STR_LIT("1.1348194799e-100")},
-            {12, rwlj_ldexp(6965949469487146, -249),  STR_LIT("7.70036656189e-60")},
-            {13, rwlj_ldexp(6965949469487146, -250),  STR_LIT("3.850183280945e-60")},
-            {14, rwlj_ldexp(6965949469487146, -251),  STR_LIT("1.9250916404724e-60")},
-            {15, rwlj_ldexp(7487252720986826, +548),  STR_LIT("6.89858653177420e+180")},
-            {16, rwlj_ldexp(5592117679628511, +164),  STR_LIT("1.307662263187865e+65")},
-            {17, rwlj_ldexp(8887055249355788, +665),  STR_LIT("1.3605202075612124e+216")},
-            {18, rwlj_ldexp(6994187472632449, +690),  STR_LIT("3.59281021747595968e+223")},
-            {19, rwlj_ldexp(8797576579012143, +588),  STR_LIT("8.912519771248455190e+192")},
-            {20, rwlj_ldexp(7363326733505337, +272),  STR_LIT("5.5876975736230114095e+97")},
-            {21, rwlj_ldexp(8549497411294502, -448),  STR_LIT("1.17625783072854037999e-119")},
-            {3,             12345000,                 STR_LIT("1.23e+07")},
-        };
-        // clang-format on
-
-        u8 buf[rwlj_kb(4)] = { 0 };
-        rwljSlice_U8 slice = { .data = buf, .len = rwlj_size_of_buf(buf) };
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = { printf_buf,
+                                      rwlj_size_of_buf(printf_buf) };
 
         for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
-            rwljString formatted_float = {
-                .data = cast(char *) slice.data,
-                .len =
-                    rwlj_format_f64(slice, tests[i].f, 'e', tests[i].precision)
-            };
+            rwljF64_Test test = tests[i];
 
-            rwlj_testing_expect_value(formatted_float, tests[i].expected);
+            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            isize printf_len =
+                cast(isize) strlen(cast(char *) printf_slice.data);
+
+            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
+            rwljString printf_string = { cast(char *) printf_slice.data,
+                                         printf_len };
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_len,
+                    rwlj_string,
+                    rwlj_len
+                );
+                success = false;
+            }
         }
     }
 
-    IT("Formats floats using 'f' specifier")
+    IT("Formats floats with g")
     {
-        rwljF64_Test tests[] = {
-            { 0, +0.0, STR_LIT("0") },
-            { 1, -0.0, STR_LIT("-0.0") },
-            { 1, 1.14223, STR_LIT("1.1") },
-            { 2, 3.14159, STR_LIT("3.14") },
-            { 3, 43289423.3123, STR_LIT("43289423.312") },
-            { 4, 543.09673859, STR_LIT("543.0967") },
-            { 5, 0.8888888888, STR_LIT("0.88889") },
-            { 6, 10.98777899, STR_LIT("10.987779") },
-            { 7, 453244984239384.10, STR_LIT("453244984239384.1000000") },
-            { 8, 42.123, STR_LIT("42.12300000") },
-            { 9, 100000.000, STR_LIT("100000.000000000") },
-            { 10, 666.666666666666666, STR_LIT("666.6666666667") },
-            { 11, 69.696767420420, STR_LIT("69.69676742042") },
-            { 12, 0, STR_LIT("0.000000000000") },
-        };
+        rwljF64_Test tests[] = { F64_TEST_TABLE(g) };
 
-        u8 buf[rwlj_kb(4)] = { 0 };
-        rwljSlice_U8 slice = { .data = buf, .len = rwlj_size_of_buf(buf) };
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = { printf_buf,
+                                      rwlj_size_of_buf(printf_buf) };
 
         for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
-            rwljString formatted_float = {
-                .data = cast(char *) slice.data,
-                .len =
-                    rwlj_format_f64(slice, tests[i].f, 'f', tests[i].precision)
-            };
+            rwljF64_Test test = tests[i];
 
-            rwlj_testing_expect_value(formatted_float, tests[i].expected);
+            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            isize printf_len =
+                cast(isize) strlen(cast(char *) printf_slice.data);
+
+            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
+            rwljString printf_string = { cast(char *) printf_slice.data,
+                                         printf_len };
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_len,
+                    rwlj_string,
+                    rwlj_len
+                );
+                success = false;
+            }
         }
     }
 
-    IT("Formats floats using 'g' specifier") {}
+    IT("Formats floats with e")
+    {
+        rwljF64_Test tests[] = { F64_TEST_TABLE(e) };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = { printf_buf,
+                                      rwlj_size_of_buf(printf_buf) };
+
+        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
+            rwljF64_Test test = tests[i];
+
+            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            isize printf_len =
+                cast(isize) strlen(cast(char *) printf_slice.data);
+
+            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
+            rwljString printf_string = { cast(char *) printf_slice.data,
+                                         printf_len };
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_len,
+                    rwlj_string,
+                    rwlj_len
+                );
+                success = false;
+            }
+        }
+    }
+
+    IT("Formats floats with a")
+    {
+        rwljF64_Test tests[] = { F64_TEST_TABLE(a) };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = { printf_buf,
+                                      rwlj_size_of_buf(printf_buf) };
+
+        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
+            rwljF64_Test test = tests[i];
+
+            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            isize printf_len =
+                cast(isize) strlen(cast(char *) printf_slice.data);
+
+            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
+            rwljString printf_string = { cast(char *) printf_slice.data,
+                                         printf_len };
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_len,
+                    rwlj_string,
+                    rwlj_len
+                );
+                success = false;
+            }
+        }
+    }
+#undef F64_TEST_TABLE
+
+    IT("Formats floats")
+    {
+        typedef struct rwljF64_Single_Test {
+            f64 value;
+            i64 prec;
+            char fmt;
+            char *printf_fmt;
+        } rwljF64_Single_Test;
+
+        typedef struct rwljF64_Double_Test {
+            f64 value[2];
+            i64 prec;
+            char fmt;
+            char *printf_fmt;
+        } rwljF64_Double_Test;
+
+        rwljF64_Single_Test tests_single[] = {
+            { -3.0, -1, 'f', "%f" },
+            { -8.88888888, 10, 'f', "%.10f" },
+            { -880.88888888, 10, 'f', "%.10f" },
+            { 4.1, 1, 'f', "%.1f" },
+            { 0.1, 0, 'f', "%.0f" },
+            { 1e-4, 2, 'f', "%.2f" },
+            { -5.2, 2, 'f', "%.2f" },
+            { 0., 1, 'f', "%.1f" },
+            { -0., -1, 'f', "%f" },
+            { 9.09834e-07, -1, 'f', "%f" },
+            { 38685626227668133590597632.0, 1, 'f', "%.1f" }, // 10
+            { 5e-7, 24, 'f', "%.24f" },
+            { 1e-8, 10, 'f', "%.10f" },
+            { 100056789.0, 1, 'f', "%.1f" },
+            { 1.23, 2, 'f', "%.2f" },
+            { -3.0, -1, 'e', "%e" },
+            { 4.1, 1, 'E', "%.1E" },
+            { -5.2, 2, 'e', "%.2e" },
+            { 3.14159265, -1, 'g', "%g" },
+            { 4.1, 1, 'G', "%.1G" },
+            { 3e-300, -1, 'g', "%g" },
+            { 1.2, 0, 'g', "%.0g" },
+        };
+
+        rwljF64_Double_Test tests_double[] = {
+            { { 0.3, -3.0 }, -1, 'g', "%g %g" },
+            { { 3.704, 3.706 }, 3, 'g', "%.3g %.3g" },
+        };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = { printf_buf,
+                                      rwlj_size_of_buf(printf_buf) };
+
+        for (isize i = 0; i < rwlj_size_of_array(tests_single); i += 1) {
+            rwljF64_Single_Test test = tests_single[i];
+
+            isize rwlj_len =
+                rwlj_bprintf(ftoa_slice, test.printf_fmt, test.value);
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.printf_fmt,
+                test.value
+            );
+            isize printf_len =
+                cast(isize) strlen(cast(char *) printf_slice.data);
+
+            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
+            rwljString printf_string = { cast(char *) printf_slice.data,
+                                         printf_len };
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_len,
+                    rwlj_string,
+                    rwlj_len
+                );
+                success = false;
+            }
+        }
+
+        for (isize i = 0; i < rwlj_size_of_array(tests_double); i += 1) {
+            rwljF64_Double_Test test = tests_double[i];
+
+            isize ftoa_len = rwlj_bprintf(
+                ftoa_slice, test.printf_fmt, test.value[0], test.value[1]
+            );
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(usize) printf_slice.len,
+                test.printf_fmt,
+                test.value[0],
+                test.value[1]
+            );
+            isize printf_len =
+                cast(isize) strlen(cast(char *) printf_slice.data);
+
+            rwljString ftoa_string = { cast(char *) ftoa_slice.data, ftoa_len };
+            rwljString printf_string = { cast(char *) printf_slice.data,
+                                         printf_len };
+
+            if (!rwlj_string_are_equal(ftoa_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_len,
+                    ftoa_string,
+                    ftoa_len
+                );
+                success = false;
+            }
+        }
+    }
+}
+
+void
+test_string_builder(void)
+{
+    DESCRIBE("String Builder tests");
 }
 
 // clang-format off
 rwljTest_Proc test_arr[] = {
+    test_math,
     test_arena,
     test_slice,
     test_array,
     test_formatting,
+    test_string_builder,
 };
 // clang-format on
 
@@ -945,6 +1345,6 @@ main(void)
 {
     for (isize i = 0; i < rwlj_size_of_array(test_arr); i += 1) {
         (test_arr[i])();
-        rwlj_printf("\n");
+        rwlj_printfln("");
     }
 }
