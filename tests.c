@@ -16,7 +16,7 @@ test_math(void)
 {
     DESCRIBE("math procedures tests");
 
-    IT("Identifies infinity")
+    TEST("Identifies infinity")
     {
         rwlj_testing_expect(rwlj_is_inf(RWLJ_INFINITY));
         rwlj_testing_expect(rwlj_is_inf(-RWLJ_INFINITY));
@@ -27,7 +27,7 @@ test_math(void)
         rwlj_testing_expect(!rwlj_is_inf(RWLJ_NAN));
     }
 
-    IT("Identifies NaNs")
+    TEST("Identifies NaNs")
     {
         rwlj_testing_expect(rwlj_is_nan(RWLJ_NAN));
         rwlj_testing_expect(!rwlj_is_nan(RWLJ_INFINITY));
@@ -40,7 +40,7 @@ test_math(void)
 
     f64 min_subnormal = 4.94065645841246544177e-324;
     f64 max_subnormal = 2.22507385850720088902e-308;
-    IT("Identifies subnormals")
+    TEST("Identifies subnormals")
     {
         rwlj_testing_expect(rwlj_is_subnormal(0.0));
         rwlj_testing_expect(rwlj_is_subnormal(-0.0));
@@ -56,7 +56,7 @@ test_math(void)
         rwlj_testing_expect(!rwlj_is_subnormal(3.14159265));
     }
 
-    IT("Classifies floats correctly")
+    TEST("Classifies floats correctly")
     {
         rwlj_testing_expect_value(
             rwlj_classify(RWLJ_NAN), RWLJ_FLOAT_CLASS_NAN
@@ -96,7 +96,7 @@ test_arena(void)
 {
     DESCRIBE("rwljArena tests");
 
-    IT("Sets growing arena")
+    TEST("Sets growing arena")
     {
         rwljArena arena = { 0 };
         usize arena_total_size = rwlj_mb(8);
@@ -109,7 +109,7 @@ test_arena(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Sets static arena")
+    TEST("Sets static arena")
     {
         rwljArena arena = { 0 };
         usize arena_total_size = rwlj_mb(1);
@@ -122,7 +122,7 @@ test_arena(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Sets buffer arena")
+    TEST("Sets buffer arena")
     {
 #define ARENA_TOTAL_SIZE rwlj_mb(1)
         u8 buf[ARENA_TOTAL_SIZE] = { 0 };
@@ -137,7 +137,7 @@ test_arena(void)
 #undef ARENA_TOTAL_SIZE
     }
 
-    IT("Allocates all memory")
+    TEST("Allocates all memory")
     {
         u8 buf[rwlj_mb(1)] = { 0 };
         rwljArena arena = { 0 };
@@ -151,7 +151,7 @@ test_arena(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Allocates no memory")
+    TEST("Allocates no memory")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
@@ -165,7 +165,7 @@ test_arena(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Arbitrarily allocates memory")
+    TEST("Arbitrarily allocates memory")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
@@ -193,7 +193,7 @@ test_arena(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Enlarges last arena allocation")
+    TEST("Enlarges last arena allocation")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
@@ -221,7 +221,7 @@ test_arena(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Shrinks last arena allocation")
+    TEST("Shrinks last arena allocation")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
@@ -257,7 +257,7 @@ test_slice(void)
     DESCRIBE("rwljSlice tests");
 
     // Continue refactoring from here
-    IT("Doesn't get value before index 0 (out of bounds)")
+    TEST("Doesn't get value before index 0 (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -267,7 +267,7 @@ test_slice(void)
         rwlj_testing_expect(!rwlj_slice_get(&slice, -1));
     }
 
-    IT("Doesn't get value beyond last index (out of bounds)")
+    TEST("Doesn't get value beyond last index (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -277,7 +277,7 @@ test_slice(void)
         rwlj_testing_expect(!rwlj_slice_get(&slice, slice.len));
     }
 
-    IT("Gets value at index 0")
+    TEST("Gets value at index 0")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -287,7 +287,7 @@ test_slice(void)
         rwlj_testing_expect(rwlj_slice_get(&slice, 0));
     }
 
-    IT("Gets value at last index")
+    TEST("Gets value at last index")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -297,7 +297,7 @@ test_slice(void)
         rwlj_testing_expect(rwlj_slice_get(&slice, slice.len - 1));
     }
 
-    IT("Doesn't set value before at index 0 (out of bounds)")
+    TEST("Doesn't set value before at index 0 (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -307,7 +307,7 @@ test_slice(void)
         rwlj_testing_expect(!rwlj_slice_set(&slice, -1, 22));
     }
 
-    IT("Doesn't set value beyond last index (out of bounds)")
+    TEST("Doesn't set value beyond last index (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -317,7 +317,7 @@ test_slice(void)
         rwlj_testing_expect(!rwlj_slice_set(&slice, slice.len, 22));
     }
 
-    IT("Sets value at index 0")
+    TEST("Sets value at index 0")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -328,7 +328,7 @@ test_slice(void)
         rwlj_testing_expect_value(rwlj_slice_get(&slice, 0), 22);
     }
 
-    IT("Sets value at last index")
+    TEST("Sets value at last index")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -339,7 +339,7 @@ test_slice(void)
         rwlj_testing_expect_value(rwlj_slice_get(&slice, slice.len - 1), 22);
     }
 
-    IT("Reverses slice")
+    TEST("Reverses slice")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -357,7 +357,7 @@ test_slice(void)
         }
     }
 
-    IT("Clears slice")
+    TEST("Clears slice")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -370,7 +370,7 @@ test_slice(void)
         }
     }
 
-    IT("Sorts slice")
+    TEST("Sorts slice")
     {
         // To be implemented
     }
@@ -381,7 +381,7 @@ test_array(void)
 {
     DESCRIBE("rwljArray tests");
 
-    IT("Creates dynamic array")
+    TEST("Creates dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -398,7 +398,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Creates fixed array")
+    TEST("Creates fixed array")
     {
         isize backing_array[8] = { 0 };
         rwljArray_Isize array = { 0 };
@@ -411,7 +411,7 @@ test_array(void)
         );
     }
 
-    IT("Creates and reserves dynamic array")
+    TEST("Creates and reserves dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -429,7 +429,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Reserves at least N elements according to grow formula")
+    TEST("Reserves at least N elements according to grow formula")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -446,7 +446,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Grows dynamic array")
+    TEST("Grows dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -465,7 +465,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Grows dynamic array up to arena's total size")
+    TEST("Grows dynamic array up to arena's total size")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -484,7 +484,7 @@ test_array(void)
     }
 
     // TODO: clean this up
-    IT("Doesn't resize dynamic array past arena's total size")
+    TEST("Doesn't resize dynamic array past arena's total size")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -506,8 +506,10 @@ test_array(void)
     }
 
     // TODO: clean this up
-    IT("Doesn't resize dynamic array past arena's total size after previous "
-       "allocations")
+    TEST(
+        "Doesn't resize dynamic array past arena's total size after previous "
+        "allocations"
+    )
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -534,7 +536,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Shrinks dynamic array")
+    TEST("Shrinks dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -554,7 +556,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Appends to dynamic array")
+    TEST("Appends to dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -577,7 +579,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Appends to dynamic array and grows")
+    TEST("Appends to dynamic array and grows")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -603,8 +605,10 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Arbitrarily appends to dynamic array and grows up to arena's total "
-       "size")
+    TEST(
+        "Arbitrarily appends to dynamic array and grows up to arena's total "
+        "size"
+    )
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -630,7 +634,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Preppends to dynamic array")
+    TEST("Preppends to dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -653,7 +657,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Preppends to dynamic array and grows")
+    TEST("Preppends to dynamic array and grows")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -679,8 +683,10 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Arbitrarily preppends to dynamic array and grows up to arena's total "
-       "size")
+    TEST(
+        "Arbitrarily preppends to dynamic array and grows up to arena's total "
+        "size"
+    )
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -706,7 +712,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Inserts into dynamic array")
+    TEST("Inserts into dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -729,7 +735,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Inserts into dynamic array and grows")
+    TEST("Inserts into dynamic array and grows")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -755,8 +761,10 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Arbitrarily inserts into dynamic array and grows up to arena's total "
-       "size")
+    TEST(
+        "Arbitrarily inserts into dynamic array and grows up to arena's total "
+        "size"
+    )
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -782,7 +790,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Dynamic array works as a stack")
+    TEST("Dynamic array works as a stack")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -808,7 +816,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Removes elements in an unordered fashion")
+    TEST("Removes elements in an unordered fashion")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -835,7 +843,7 @@ test_array(void)
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Removes elements in an ordered fashion")
+    TEST("Removes elements in an ordered fashion")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
@@ -868,7 +876,7 @@ test_formatting(void)
 {
     DESCRIBE("Formatting tests");
 
-    IT("Prints text")
+    TEST("Prints text")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
@@ -879,7 +887,7 @@ test_formatting(void)
         rwlj_testing_expect_value(string, expected);
     }
 
-    IT("Prints nothing")
+    TEST("Prints nothing")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
@@ -890,7 +898,7 @@ test_formatting(void)
         rwlj_testing_expect_value(string, expected);
     }
 
-    IT("Prints the whole buffer")
+    TEST("Prints the whole buffer")
     {
 #define STRING                                                                 \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
@@ -910,7 +918,7 @@ test_formatting(void)
 #undef STRING
     }
 
-    IT("Prints and doesn't go beyong buffer")
+    TEST("Prints and doesn't go beyong buffer")
     {
 #define STRING                                                                 \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
@@ -932,7 +940,7 @@ test_formatting(void)
 #undef STRING
     }
 
-    IT("Formats signed integer")
+    TEST("Formats signed integer")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
@@ -953,7 +961,7 @@ test_formatting(void)
         }
     }
 
-    IT("Formats unsigned integer")
+    TEST("Formats unsigned integer")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
@@ -974,6 +982,152 @@ test_formatting(void)
         }
     }
 
+    TEST("Prints sign")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        {
+            isize value = 22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%+ld|", value) };
+            rwljString expected = STR_LIT("|+22|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = -22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%+ld|", value) };
+            rwljString expected = STR_LIT("|-22|");
+            rwlj_testing_expect_value(string, expected);
+        }
+    }
+
+    TEST("Prints leading blank")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        {
+            isize value = 22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|% ld|", value) };
+            rwljString expected = STR_LIT("| 22|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = -22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|% ld|", value) };
+            rwljString expected = STR_LIT("|-22|");
+            rwlj_testing_expect_value(string, expected);
+        }
+    }
+
+    TEST("Ignore certain combinations of flags")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        {
+            isize value = 22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|% +ld|", value) };
+            rwljString expected = STR_LIT("|+22|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = -22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|% +ld|", value) };
+            rwljString expected = STR_LIT("|-22|");
+            rwlj_testing_expect_value(string, expected);
+        }
+    }
+
+    TEST("Pads with 0s")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        {
+            isize value = 22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString expected = STR_LIT("|00022|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = -22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString expected = STR_LIT("|-0022|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = 0;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString expected = STR_LIT("|00000|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = 12345;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString expected = STR_LIT("|12345|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = 1234567;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString expected = STR_LIT("|1234567|");
+            rwlj_testing_expect_value(string, expected);
+        }
+    }
+
+    TEST("Left justifies")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+
+        {
+            isize value = 22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString expected = STR_LIT("|22   |");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = -22;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString expected = STR_LIT("|-22  |");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = 0;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString expected = STR_LIT("|0    |");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = 12345;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString expected = STR_LIT("|12345|");
+            rwlj_testing_expect_value(string, expected);
+        }
+        {
+            isize value = 1234567;
+            rwljString string = { cast(char *) buf_slice.data,
+                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString expected = STR_LIT("|1234567|");
+            rwlj_testing_expect_value(string, expected);
+        }
+    }
     typedef struct rwljF64_Test {
         char *fmt;
         f64 value;
@@ -1029,7 +1183,7 @@ test_formatting(void)
         { "%.20" #fmt, ldexp(7363326733505337.0, +272) },                      \
         { "%.21" #fmt, ldexp(8549497411294502.0, -448) },
 
-    IT("Formats floats with f")
+    TEST("Formats floats with f")
     {
         rwljF64_Test tests[] = { F64_TEST_TABLE(f) };
 
@@ -1072,7 +1226,7 @@ test_formatting(void)
         }
     }
 
-    IT("Formats floats with g")
+    TEST("Formats floats with g")
     {
         rwljF64_Test tests[] = { F64_TEST_TABLE(g) };
 
@@ -1115,7 +1269,7 @@ test_formatting(void)
         }
     }
 
-    IT("Formats floats with e")
+    TEST("Formats floats with e")
     {
         rwljF64_Test tests[] = { F64_TEST_TABLE(e) };
 
@@ -1158,7 +1312,7 @@ test_formatting(void)
         }
     }
 
-    IT("Formats floats with a")
+    TEST("Formats floats with a")
     {
         rwljF64_Test tests[] = { F64_TEST_TABLE(a) };
 
@@ -1202,7 +1356,7 @@ test_formatting(void)
     }
 #undef F64_TEST_TABLE
 
-    IT("Formats floats")
+    TEST("Formats floats")
     {
         typedef struct rwljF64_Single_Test {
             f64 value;

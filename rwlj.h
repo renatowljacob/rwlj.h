@@ -370,28 +370,48 @@ void rwlj_insertion_sort(void *data, isize len, isize elem_size);
  *  Data Structures
  */
 
-/* slices */
+/* slices and dynamic arrays */
 
-#define GENERIC_SLICE(T, name)                                                 \
+enum rwljArray_Kind {
+    RWLJ_ARRAY_GROWING,
+    RWLJ_ARRAY_FIXED,
+};
+typedef isize rwljArray_Kind;
+
+#define GENERIC_ARRAY(T, name)                                                 \
+    typedef struct rwlj_concat(rwljArray, name) {                              \
+        T *data;                                                               \
+        isize len;                                                             \
+        isize capacity;                                                        \
+        rwljArray_Kind kind;                                                   \
+        rwljArena *arena;                                                      \
+        usize item_size;                                                       \
+    } rwlj_concat_(rwljArray, name);                                           \
     typedef struct rwlj_concat_(rwljSlice, name) {                             \
         T *data;                                                               \
         isize len;                                                             \
     } rwlj_concat_(rwljSlice, name)
 
-GENERIC_SLICE(char, Char);
-GENERIC_SLICE(i8, I8);
-GENERIC_SLICE(i16, I16);
-GENERIC_SLICE(i32, I32);
-GENERIC_SLICE(i64, I64);
-GENERIC_SLICE(isize, Isize);
-GENERIC_SLICE(u8, U8);
-GENERIC_SLICE(u16, U16);
-GENERIC_SLICE(u32, U32);
-GENERIC_SLICE(u64, U64);
-GENERIC_SLICE(usize, Usize);
-GENERIC_SLICE(f16, F16);
-GENERIC_SLICE(f32, F32);
-GENERIC_SLICE(f64, F64);
+GENERIC_ARRAY(char, Char);
+GENERIC_ARRAY(i8, I8);
+GENERIC_ARRAY(i16, I16);
+GENERIC_ARRAY(i32, I32);
+GENERIC_ARRAY(i64, I64);
+GENERIC_ARRAY(isize, Isize);
+GENERIC_ARRAY(u8, U8);
+GENERIC_ARRAY(u16, U16);
+GENERIC_ARRAY(u32, U32);
+GENERIC_ARRAY(u64, U64);
+GENERIC_ARRAY(usize, Usize);
+GENERIC_ARRAY(f16, F16);
+GENERIC_ARRAY(f32, F32);
+GENERIC_ARRAY(f64, F64);
+GENERIC_ARRAY(bool, Bool);
+GENERIC_ARRAY(b8, B8);
+GENERIC_ARRAY(b16, B16);
+GENERIC_ARRAY(b32, B32);
+GENERIC_ARRAY(b64, B64);
+GENERIC_ARRAY(bsize, Bsize);
 
 #define rwlj_slice_get(slice, index)                                           \
     (index >= 0 && index < (slice)->len ? (slice)->data[index] : 0)
@@ -417,38 +437,6 @@ GENERIC_SLICE(f64, F64);
             cast(usize)((slice)->len * rwlj_size_of((slice)->data[0]))         \
         );                                                                     \
     } while (false)
-
-/* dynamic arrays */
-
-enum rwljArray_Kind {
-    RWLJ_ARRAY_GROWING,
-    RWLJ_ARRAY_FIXED,
-};
-typedef isize rwljArray_Kind;
-
-#define GENERIC_ARRAY(T, name)                                                 \
-    typedef struct rwlj_concat(rwljArray, name) {                              \
-        T *data;                                                               \
-        isize len;                                                             \
-        isize capacity;                                                        \
-        rwljArray_Kind kind;                                                   \
-        rwljArena *arena;                                                      \
-        usize item_size;                                                       \
-    } rwlj_concat_(rwljArray, name)
-
-GENERIC_ARRAY(i8, I8);
-GENERIC_ARRAY(i16, I16);
-GENERIC_ARRAY(i32, I32);
-GENERIC_ARRAY(i64, I64);
-GENERIC_ARRAY(isize, Isize);
-GENERIC_ARRAY(u8, U8);
-GENERIC_ARRAY(u16, U16);
-GENERIC_ARRAY(u32, U32);
-GENERIC_ARRAY(u64, U64);
-GENERIC_ARRAY(usize, Usize);
-GENERIC_ARRAY(f16, F16);
-GENERIC_ARRAY(f32, F32);
-GENERIC_ARRAY(f64, F64);
 
 #define RWLJ_GROW_FORMULA(capacity) (8 + capacity * 2)
 
@@ -1092,7 +1080,6 @@ rwlj_string_cstrlen(char const *string, isize max_len)
     return len;
 }
 
-// One can only wish for generics
 isize
 rwlj_write_i64(rwljSlice_U8 buf, i64 number)
 {
@@ -1105,6 +1092,8 @@ rwlj_write_i64(rwljSlice_U8 buf, i64 number)
             bytes_written += 1;
             start = bytes_written;
         }
+
+        // Sanitizer complains of overflow
         if (number == RWLJ_I64_MIN) {
             buf.data[bytes_written] = cast(u8)(rwlj_abs(number % base) + '0');
             number /= base;
@@ -1130,34 +1119,18 @@ isize
 rwlj_write_u64(rwljSlice_U8 buf, u64 number, u64 base)
 {
     isize bytes_written = 0;
-    u8 fmt = 0;
     switch (base) {
     case 2:
-        fmt = 'b';
-        break;
     case 8:
-        fmt = 'o';
-        break;
     case 10:
-        break;
     case 16:
-        fmt = 'x';
         break;
     default:
         rwlj_assert_fail("Base not implemented for unsigned integers");
     }
-    if (base != 10) {
-        if (rwlj_slice_set(&buf, bytes_written, '0')) {
-            bytes_written += 1;
-        }
-        if (rwlj_slice_set(&buf, bytes_written, fmt)) {
-            bytes_written += 1;
-        }
-    }
     isize start = bytes_written;
+    char *digit_table = "0123456789abcdef";
 
-    char *digit_table =
-        rwlj_is_upper(fmt) ? "0123456789ABCDEF" : "0123456789abcdef";
     do {
         buf.data[bytes_written] = cast(u8) digit_table[number % base];
         number /= base;
@@ -2389,7 +2362,6 @@ __rwlj_bprintf_va(
             bool minus;
             bool blank;
             bool sign;
-            bool thousands;
         } flags;
         rwljLength_Modifier length_modifier;
     } rwljConv_State;
@@ -2436,23 +2408,6 @@ __rwlj_bprintf_va(
                 state.flags.sign = true;
                 state.flags.blank = false;
                 continue;
-            case '\'':
-                state.flags.thousands = true;
-                continue;
-            }
-            break;
-        }
-
-        // Parse length modifiers
-        for (; i < buf.len && rwlj_is_alpha(string[i]); i += 1) {
-            switch (string[i]) {
-            case 'h':
-                state.length_modifier =
-                    state.length_modifier == RWLJ_CHAR ? RWLJ_SHORT : RWLJ_CHAR;
-                continue;
-            case 'l':
-                state.length_modifier = RWLJ_LONG;
-                continue;
             }
             break;
         }
@@ -2488,9 +2443,19 @@ __rwlj_bprintf_va(
             }
         }
 
-        u8 conv_buf[rwlj_kb(1) / 2] = { 0 };
-        rwljSlice_U8 conv_slice = { .data = conv_buf,
-                                    .len = rwlj_size_of_array(conv_buf) };
+        // Parse length modifiers
+        for (; i < buf.len && rwlj_is_alpha(string[i]); i += 1) {
+            switch (string[i]) {
+            case 'h':
+                state.length_modifier =
+                    state.length_modifier == RWLJ_CHAR ? RWLJ_SHORT : RWLJ_CHAR;
+                continue;
+            case 'l':
+                state.length_modifier = RWLJ_LONG;
+                continue;
+            }
+            break;
+        }
 
         // TODO: Oh, just thought about printing arrays *recursively* (it'll be
         // 1 depth so it'll be fine)
@@ -2502,10 +2467,15 @@ __rwlj_bprintf_va(
         // providing a custom callback for those
 
         // Parse conversion specifiers
+        u8 conv_buf[512] = { 0 };
+        rwljSlice_U8 conv = { .data = conv_buf,
+                              .len = rwlj_size_of_array(conv_buf) };
         isize conv_bytes_written = 0;
-        union {
+
+        struct {
             i64 i;
             u64 u;
+            f64 f;
         } value = { 0 };
 
         switch (string[i]) {
@@ -2522,7 +2492,16 @@ __rwlj_bprintf_va(
                 break;
             }
 
-            conv_bytes_written = rwlj_write_i64(conv_slice, value.i);
+            if (value.i == 0 && state.precision == 0) {
+                continue;
+            }
+
+            // Discard the sign, we'll put it ourselves
+            conv_bytes_written = rwlj_write_i64(conv, value.i);
+            if (value.i < 0) {
+                conv_bytes_written -= 1;
+                conv.data = &conv.data[1];
+            }
             break;
         case 'x':
         case 'X':
@@ -2541,8 +2520,22 @@ __rwlj_bprintf_va(
                 break;
             }
 
-            conv_bytes_written =
-                rwlj_write_u64(conv_slice, value.u, cast(u64) state.base);
+            if (value.u == 0 && state.precision == 0) {
+                continue;
+            }
+            if (state.flags.alternate && state.base != 10) {
+                conv.data[0] = '0';
+                conv.data[1] = cast(u8) string[i];
+                conv_bytes_written += 2;
+            }
+
+            conv_bytes_written = rwlj_write_u64(
+                (rwljSlice_U8){ &conv.data[conv_bytes_written],
+                                conv.len - conv_bytes_written },
+                value.u,
+                cast(u64) state.base
+            );
+
             break;
         case 'A':
         case 'a':
@@ -2552,14 +2545,26 @@ __rwlj_bprintf_va(
         case 'e':
         case 'f':
             conv_bytes_written = rwlj_write_f64(
-                conv_slice, va_arg(ap, f64), cast(u8) string[i], state.precision
+                conv, va_arg(ap, f64), cast(u8) string[i], state.precision
             );
             break;
         case 'p': {
             void *addr = va_arg(ap, void *);
-            value.u = addr == NULL ? 0 : cast(uintptr) & addr;
+            if (addr == NULL) {
+                rwlj_write_string(buf, STR_LIT("<nil>"));
+                continue;
+            }
+            value.u = cast(uintptr) addr;
 
-            conv_bytes_written = rwlj_write_u64(conv_slice, value.u, 16);
+            conv.data[0] = '0';
+            conv.data[1] = 'x';
+            conv_bytes_written += 2;
+            conv_bytes_written = rwlj_write_u64(
+                (rwljSlice_U8){ &conv.data[conv_bytes_written],
+                                conv.len - conv_bytes_written },
+                value.u,
+                16
+            );
             break;
         }
         case 's': {
@@ -2605,43 +2610,43 @@ __rwlj_bprintf_va(
             continue;
         }
 
-        // Better make functions for these
-        if (conv_slice.data[0] != '-') {
-            if (state.flags.sign) {
-                if (rwlj_slice_set(&buf, bytes_written, '+')) {
-                    bytes_written += 1;
-                    state.field_width -= 1;
-                }
-            } else if (state.flags.blank) {
-                if (rwlj_slice_set(&buf, bytes_written, ' ')) {
-                    bytes_written += 1;
-                    state.field_width -= 1;
-                }
+        // Leading chars
+        u8 leading = value.i < 0         ? '-'
+                     : state.flags.sign  ? '+'
+                     : state.flags.blank ? ' '
+                                         : 0;
+        if (leading) {
+            if (rwlj_slice_set(&buf, bytes_written, leading)) {
+                bytes_written += 1;
+                state.field_width -= 1;
             }
         }
 
-        for (; state.flags.zero && state.field_width - conv_bytes_written > 0 &&
-               bytes_written < buf.len;
-             bytes_written += 1, state.field_width -= 1) {
-            buf.data[bytes_written] = '0';
+        // 0/space padding
+        if (state.flags.zero) {
+            isize diff = state.field_width - conv_bytes_written;
+            if (diff > 0) {
+                usize bytes_to_copy =
+                    cast(usize) rwlj_min(diff, buf.len - bytes_written);
+                rwlj_memory_set(&buf.data[bytes_written], '0', bytes_to_copy);
+                bytes_written += cast(isize) bytes_to_copy;
+            }
         }
 
-        isize offset = conv_bytes_written + bytes_written;
-        isize bytes_to_copy = rwlj_min(conv_bytes_written, buf.len - offset);
+        usize bytes_to_copy =
+            cast(usize) rwlj_min(conv_bytes_written, buf.len - bytes_written);
+        rwlj_memory_copy(&buf.data[bytes_written], conv.data, bytes_to_copy);
+        bytes_written += cast(isize) bytes_to_copy;
 
-        rwlj_memory_copy(
-            &buf.data[bytes_written], conv_slice.data, cast(usize) bytes_to_copy
-        );
-        bytes_written += bytes_to_copy;
-
-        for (;
-             state.flags.minus && state.field_width - conv_bytes_written > 0 &&
-             bytes_written < buf.len;
-             bytes_written += 1, state.field_width -= 1) {
-            buf.data[bytes_written] = ' ';
+        if (state.flags.minus) {
+            isize diff = state.field_width - conv_bytes_written;
+            if (diff > 0) {
+                usize bytes_to_copy =
+                    cast(usize) rwlj_min(diff, buf.len - bytes_written);
+                rwlj_memory_set(&buf.data[bytes_written], ' ', bytes_to_copy);
+                bytes_written += cast(isize) bytes_to_copy;
+            }
         }
-
-        // TODO: alternate flag
     }
 
     if (has_new_line && rwlj_slice_set(&buf, bytes_written, '\n')) {
@@ -2992,7 +2997,7 @@ rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
         ));                                                                    \
     } while (false)
 
-#define IT(string)                                                             \
+#define TEST(string)                                                           \
     for (bool loop = true, success = true;                                     \
          loop && rwlj_printfln("[%d] - " string "...", RWLJ_COUNTER);          \
          loop = false,                                                         \
