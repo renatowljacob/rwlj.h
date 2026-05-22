@@ -413,6 +413,11 @@ GENERIC_ARRAY(b32, B32);
 GENERIC_ARRAY(b64, B64);
 GENERIC_ARRAY(bsize, Bsize);
 
+#define rwlj_slice(ptr, start, end) { &(ptr)[start], rwlj_max(end - start, 0) }
+#define rwlj_slice_from_array(array)                                           \
+    rwlj_slice(array, 0, rwlj_size_of_array(array))
+#define rwlj_slice_from_buf(buf) rwlj_slice_from_array(buf)
+
 #define rwlj_slice_get(slice, index)                                           \
     (index >= 0 && index < (slice)->len ? (slice)->data[index] : 0)
 #define rwlj_slice_set(slice, index, value)                                    \
@@ -593,6 +598,21 @@ typedef struct rwljString {
 
 #define STR_LIT(string) cast(rwljString){ string, rwlj_size_of(string) - 1 }
 
+#define rwlj_string(ptr, start, end)                                           \
+    cast(rwljString)                                                           \
+    {                                                                          \
+        cast(char *) & (ptr)[start], rwlj_max(end - start, 0)                  \
+    }
+
+#define rwlj_string_from_slice(slice)                                          \
+    rwlj_string((slice)->data, 0, (slice)->len)
+
+#define rwlj_string_from_fmt(slice, ...)                                       \
+    cast(rwljString)                                                           \
+    {                                                                          \
+        cast(char *)(slice)->data, rwlj_bprintf(*(slice), __VA_ARGS__)         \
+    }
+
 isize rwlj_string_compare(rwljString a, rwljString b);
 bool rwlj_string_are_equal(rwljString a, rwljString b);
 rwljString rwlj_string_clone(rwljString s, rwljArena *arena);
@@ -600,7 +620,7 @@ rwljString rwlj_string_clone(rwljString s, rwljArena *arena);
 isize rwlj_string_cstrlen(const char *string, isize max_len);
 
 isize rwlj_write_i64(rwljSlice_U8 buf, i64 number);
-isize rwlj_write_u64(rwljSlice_U8 buf, u64 number, u64 base);
+isize rwlj_write_u64(rwljSlice_U8 buf, u64 number, u8 fmt);
 isize rwlj_write_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision);
 isize rwlj_write_string(rwljSlice_U8 buf, rwljString s);
 
@@ -650,7 +670,7 @@ void rwlj_string_builder_init(
 );
 rwljString rwlj_string_builder_write_i64(rwljString_Builder *sb, i64 number);
 rwljString
-rwlj_string_builder_write_u64(rwljString_Builder *sb, u64 number, u64 base);
+rwlj_string_builder_write_u64(rwljString_Builder *sb, u64 number, u8 fmt);
 rwljString rwlj_string_builder_write_f64(
     rwljString_Builder *sb,
     f64 number,
@@ -1108,42 +1128,67 @@ rwlj_write_i64(rwljSlice_U8 buf, i64 number)
         bytes_written += 1;
     } while (bytes_written < buf.len && n > 0);
 
-    rwljSlice_U8 slice = { .data = &buf.data[start],
-                           .len = bytes_written - start };
+    rwljSlice_U8 slice = rwlj_slice(buf.data, start, bytes_written);
     rwlj_slice_reverse(&slice, u8);
 
     return bytes_written;
 }
 
 isize
-rwlj_write_u64(rwljSlice_U8 buf, u64 number, u64 base)
+rwlj_write_u64(rwljSlice_U8 buf, u64 number, u8 fmt)
 {
     isize bytes_written = 0;
-    switch (base) {
-    case 2:
-    case 8:
-    case 10:
-    case 16:
+    usize base = 10;
+    switch (fmt) {
+    case 'b':
+        base = 2;
+        break;
+    case 'o':
+        base = 8;
+        break;
+    case 'u':
+        break;
+    case 'X':
+    case 'x':
+        base = 16;
         break;
     default:
         rwlj_assert_fail("Base not implemented for unsigned integers");
     }
     isize start = bytes_written;
-    char *digit_table = "0123456789abcdef";
 
-    do {
-        buf.data[bytes_written] = cast(u8) digit_table[number % base];
-        number /= base;
-        bytes_written += 1;
-    } while (bytes_written < buf.len && number > 0);
-    rwljSlice_U8 slice = { .data = &buf.data[start],
-                           .len = bytes_written - start };
+    if (base == 10) {
+        do {
+            buf.data[bytes_written] = cast(u8)(number % 10 + '0');
+            number /= 10;
+            bytes_written += 1;
+        } while (bytes_written < buf.len && number > 0);
+    } else if (base == 16) {
+        char *digit_table =
+            fmt != 'X' ? "0123456789abcdef" : "0123456789ABCDEF";
+        usize mask = base - 1;
+
+        do {
+            buf.data[bytes_written] = cast(u8) digit_table[number & mask];
+            number >>= 4;
+            bytes_written += 1;
+        } while (bytes_written < buf.len && number > 0);
+    } else {
+        usize mask = base - 1;
+        usize shift = base == 8 ? 3 : 1;
+
+        do {
+            buf.data[bytes_written] = cast(u8)((number & mask) + '0');
+            number >>= shift;
+            bytes_written += 1;
+        } while (bytes_written < buf.len && number > 0);
+    }
+
+    rwljSlice_U8 slice = rwlj_slice(buf.data, start, bytes_written);
     rwlj_slice_reverse(&slice, u8);
 
     return bytes_written;
 }
-
-// TODO: port ftoa.h
 
 // This whole floating-point section was adapted from
 // https://github.com/renatowljacob/ftoa.h which is also an adaptation of stb's
@@ -1160,9 +1205,9 @@ rwlj_write_u64(rwljSlice_U8 buf, u64 number, u64 base)
 #define __RWLJ_METRIC_1024    2048
 #define __RWLJ_METRIC_JEDEC   4096
 
-#ifdef __RWLJ_SPRINTF_NOUNALIGNED // define this before inclusion to force
-                                  // stbsp_sprintf to always use aligned
-                                  // accesses
+// define this before inclusion to force stbsp_sprintf to always use aligned
+// accesses
+#ifdef __RWLJ_SPRINTF_NOUNALIGNED
 #define __RWLJ_UNALIGNED(code)
 #else
 #define __RWLJ_UNALIGNED(code) code
@@ -1589,6 +1634,8 @@ __rwlj_lead_sign(u32 fl, char *sign)
         sign[1] = '+';
     }
 }
+
+// TODO: suppress ASAN diagnostic
 
 isize
 rwlj_write_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
@@ -2468,8 +2515,7 @@ __rwlj_bprintf_va(
 
         // Parse conversion specifiers
         u8 conv_buf[512] = { 0 };
-        rwljSlice_U8 conv = { .data = conv_buf,
-                              .len = rwlj_size_of_array(conv_buf) };
+        rwljSlice_U8 conv = rwlj_slice_from_buf(conv_buf);
         isize conv_bytes_written = 0;
 
         struct {
@@ -2496,19 +2542,19 @@ __rwlj_bprintf_va(
                 continue;
             }
 
-            // Discard the sign, we'll put it ourselves
             conv_bytes_written = rwlj_write_i64(conv, value.i);
+
+            // Discard the sign, we'll put it ourselves
             if (value.i < 0) {
                 conv_bytes_written -= 1;
                 conv.data = &conv.data[1];
             }
             break;
-        case 'x':
-        case 'X':
+        case 'b':
         case 'o':
         case 'u':
-            state.base = string[i] == 'o' ? 8 : string[i] == 'u' ? 10 : 16;
-
+        case 'x':
+        case 'X':
             switch (cast(enum rwljLength_Modifier) state.length_modifier) {
             case RWLJ_INT:
             case RWLJ_CHAR:
@@ -2523,17 +2569,17 @@ __rwlj_bprintf_va(
             if (value.u == 0 && state.precision == 0) {
                 continue;
             }
-            if (state.flags.alternate && state.base != 10) {
+            if (state.flags.alternate && string[i] != 'u') {
                 conv.data[0] = '0';
                 conv.data[1] = cast(u8) string[i];
                 conv_bytes_written += 2;
             }
 
-            conv_bytes_written = rwlj_write_u64(
-                (rwljSlice_U8){ &conv.data[conv_bytes_written],
-                                conv.len - conv_bytes_written },
+            conv_bytes_written += rwlj_write_u64(
+                cast(rwljSlice_U8)
+                    rwlj_slice(conv.data, conv_bytes_written, conv.len),
                 value.u,
-                cast(u64) state.base
+                cast(u8) string[i]
             );
 
             break;
@@ -2544,26 +2590,38 @@ __rwlj_bprintf_va(
         case 'E':
         case 'e':
         case 'f':
+            value.f = va_arg(ap, f64);
             conv_bytes_written = rwlj_write_f64(
-                conv, va_arg(ap, f64), cast(u8) string[i], state.precision
+                conv, value.f, cast(u8) string[i], state.precision
             );
+
+            // Discard the sign, we'll put it ourselves
+            if (value.f < 0) {
+                conv_bytes_written -= 1;
+                conv.data = &conv.data[1];
+            }
             break;
         case 'p': {
             void *addr = va_arg(ap, void *);
             if (addr == NULL) {
-                rwlj_write_string(buf, STR_LIT("<nil>"));
+                bytes_written += rwlj_write_string(
+                    cast(rwljSlice_U8)
+                        rwlj_slice(buf.data, bytes_written, buf.len),
+                    STR_LIT("<nil>")
+                );
                 continue;
             }
             value.u = cast(uintptr) addr;
+            u8 ptr_fmt = 'x';
 
             conv.data[0] = '0';
-            conv.data[1] = 'x';
+            conv.data[1] = ptr_fmt;
             conv_bytes_written += 2;
-            conv_bytes_written = rwlj_write_u64(
-                (rwljSlice_U8){ &conv.data[conv_bytes_written],
-                                conv.len - conv_bytes_written },
+            conv_bytes_written += rwlj_write_u64(
+                (rwljSlice_U8)
+                    rwlj_slice(conv.data, conv_bytes_written, conv.len),
                 value.u,
-                16
+                ptr_fmt
             );
             break;
         }
@@ -2577,18 +2635,14 @@ __rwlj_bprintf_va(
                 .len = rwlj_string_cstrlen(s, buf.len - bytes_written)
             };
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8){ &buf.data[bytes_written],
-                                buf.len - bytes_written },
-                str
+                (rwljSlice_U8)rwlj_slice(buf.data, bytes_written, buf.len), str
             );
             continue;
         }
         case 'S': {
             rwljString s = va_arg(ap, rwljString);
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8){ &buf.data[bytes_written],
-                                buf.len - bytes_written },
-                s
+                (rwljSlice_U8)rwlj_slice(buf.data, bytes_written, buf.len), s
             );
             continue;
         }
@@ -2596,8 +2650,7 @@ __rwlj_bprintf_va(
             rwljString boolean =
                 va_arg(ap, int) ? STR_LIT("true") : STR_LIT("false");
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8){ &buf.data[bytes_written],
-                                buf.len - bytes_written },
+                (rwljSlice_U8)rwlj_slice(buf.data, bytes_written, buf.len),
                 boolean
             );
             continue;
@@ -2611,10 +2664,10 @@ __rwlj_bprintf_va(
         }
 
         // Leading chars
-        u8 leading = value.i < 0         ? '-'
-                     : state.flags.sign  ? '+'
-                     : state.flags.blank ? ' '
-                                         : 0;
+        u8 leading = (value.i < 0 || value.f < 0) ? '-'
+                     : state.flags.sign           ? '+'
+                     : state.flags.blank          ? ' '
+                                                  : 0;
         if (leading) {
             if (rwlj_slice_set(&buf, bytes_written, leading)) {
                 bytes_written += 1;
@@ -2689,9 +2742,8 @@ __rwlj_fprintf_va(
     va_list ap
 )
 {
-    persistent char buf[4096] = { 0 };
-    rwljSlice_U8 buf_slice = { .data = cast(u8 *) buf,
-                               .len = rwlj_size_of_array(buf) };
+    persistent u8 buf[4096] = { 0 };
+    rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
     isize len = __rwlj_bprintf_va(buf_slice, has_new_line, fmt, ap);
 
     return write(fd, buf_slice.data, cast(usize) len);
@@ -2851,7 +2903,7 @@ rwlj_string_builder_write_i64(rwljString_Builder *sb, i64 number)
 {
     isize start = sb->len;
     sb->len += rwlj_write_i64(
-        (rwljSlice_U8){ cast(u8 *) & sb->buf[start], sb->capacity - start },
+        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
         number
     );
 
@@ -2859,13 +2911,13 @@ rwlj_string_builder_write_i64(rwljString_Builder *sb, i64 number)
 }
 
 rwljString
-rwlj_string_builder_write_u64(rwljString_Builder *sb, u64 number, u64 base)
+rwlj_string_builder_write_u64(rwljString_Builder *sb, u64 number, u8 fmt)
 {
     isize start = sb->len;
     sb->len += rwlj_write_u64(
-        (rwljSlice_U8){ cast(u8 *) & sb->buf[start], sb->capacity - start },
+        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
         number,
-        base
+        fmt
     );
 
     return (rwljString){ &sb->buf[start], sb->len - start };
@@ -2881,7 +2933,7 @@ rwlj_string_builder_write_f64(
 {
     isize start = sb->len;
     sb->len += rwlj_write_f64(
-        (rwljSlice_U8){ cast(u8 *) & sb->buf[start], sb->capacity - start },
+        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
         number,
         fmt,
         precision
@@ -2895,7 +2947,8 @@ rwlj_string_builder_write_string(rwljString_Builder *sb, rwljString s)
 {
     isize start = sb->len;
     sb->len += rwlj_write_string(
-        (rwljSlice_U8){ cast(u8 *) & sb->buf[start], sb->capacity - start }, s
+        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
+        s
     );
 
     return (rwljString){ &sb->buf[start], sb->len - start };
@@ -2928,14 +2981,14 @@ rwlj_sbprintf(rwljString_Builder *sb, char const *fmt, ...)
 
     va_start(ap, fmt);
     sb->len += __rwlj_bprintf_va(
-        (rwljSlice_U8){ cast(u8 *) & sb->buf[start], sb->capacity - start },
+        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
         false,
         fmt,
         ap
     );
     va_end(ap);
 
-    return (rwljString){ &sb->buf[start], sb->len - start };
+    return cast(rwljString) rwlj_slice(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -2946,38 +2999,36 @@ rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...)
 
     va_start(ap, fmt);
     sb->len += __rwlj_bprintf_va(
-        (rwljSlice_U8){ cast(u8 *) & sb->buf[start], sb->capacity - start },
+        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
         true,
         fmt,
         ap
     );
     va_end(ap);
 
-    return (rwljString){ &sb->buf[start], sb->len - start };
+    return cast(rwljString) rwlj_slice(sb->buf, start, sb->len);
 }
 
 rwljString
 rwlj_sbprint(rwljString_Builder *sb, rwljString s)
 {
-    rwljSlice_U8 buf = { cast(u8 *) & sb->buf[sb->len],
-                         sb->capacity - sb->len };
+    rwljSlice_U8 buf = rwlj_slice(cast(u8 *) sb->buf, sb->len, sb->capacity);
     isize bytes_written = rwlj_bprint(buf, s);
 
-    return (rwljString){ &sb->buf[sb->len], bytes_written };
+    return cast(rwljString) rwlj_slice(sb->buf, 0, bytes_written);
 }
 
 rwljString
 rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
 {
-    rwljSlice_U8 buf = { cast(u8 *) & sb->buf[sb->len],
-                         sb->capacity - sb->len };
+    rwljSlice_U8 buf = rwlj_slice(cast(u8 *) sb->buf, sb->len, sb->capacity);
     isize bytes_written = rwlj_bprint(buf, s);
 
     if (rwlj_slice_set(&buf, bytes_written, '\n')) {
         bytes_written += 1;
     }
 
-    return (rwljString){ &sb->buf[sb->len], bytes_written };
+    return cast(rwljString) rwlj_slice(sb->buf, sb->len, bytes_written);
 }
 
 /*

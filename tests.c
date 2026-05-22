@@ -262,7 +262,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_get(&slice, -1));
     }
@@ -272,7 +272,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_get(&slice, slice.len));
     }
@@ -282,7 +282,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_get(&slice, 0));
     }
@@ -292,7 +292,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_get(&slice, slice.len - 1));
     }
@@ -302,7 +302,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_set(&slice, -1, 22));
     }
@@ -312,7 +312,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_set(&slice, slice.len, 22));
     }
@@ -322,7 +322,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_set(&slice, 0, 22));
         rwlj_testing_expect_value(rwlj_slice_get(&slice, 0), 22);
@@ -333,7 +333,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_set(&slice, slice.len - 1, 22));
         rwlj_testing_expect_value(rwlj_slice_get(&slice, slice.len - 1), 22);
@@ -347,9 +347,8 @@ test_slice(void)
         isize reversed_buf[] = {
             8, 7, 6, 5, 4, 3, 2, 1,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
-        rwljSlice_Isize reversed_slice = { reversed_buf,
-                                           rwlj_size_of_array(reversed_buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize reversed_slice = rwlj_slice_from_array(reversed_buf);
 
         rwlj_slice_reverse(&slice, isize);
         for (isize i = 0; i < slice.len; i += 1) {
@@ -362,7 +361,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_slice_clear(&slice);
         for (isize i = 0; i < slice.len; i += 1) {
@@ -879,255 +878,355 @@ test_formatting(void)
     TEST("Prints text")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
-        rwljString string = { cast(char *) buf_slice.data,
-                              rwlj_bprintf(buf_slice, "Hello, World!") };
+        rwljString s = rwlj_string_from_fmt(&buf_slice, "Hello, World!");
         rwljString expected = STR_LIT("Hello, World!");
-        rwlj_testing_expect_value(string, expected);
+        rwlj_testing_expect_value(s, expected);
     }
 
     TEST("Prints nothing")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
-        rwljString string = { cast(char *) buf_slice.data,
-                              rwlj_bprintf(buf_slice, "") };
+        rwljString s = rwlj_string_from_fmt(&buf_slice, "");
         rwljString expected = STR_LIT("");
-        rwlj_testing_expect_value(string, expected);
+        rwlj_testing_expect_value(s, expected);
     }
 
-    TEST("Prints the whole buffer")
-    {
 #define STRING                                                                 \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    TEST("Prints the whole buffer")
+    {
 
         u8 buf[rwlj_kb(1) / 8] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         for (isize i = 0; i < buf_slice.len; i += 1) {
             buf_slice.data[i] = 'a';
         }
 
-        rwljString string = { cast(char *) buf_slice.data,
-                              rwlj_bprintf(buf_slice, STRING) };
+        rwljString s = rwlj_string_from_fmt(&buf_slice, STRING);
         rwljString expected = STR_LIT(STRING);
-        rwlj_testing_expect_value(string, expected);
-#undef STRING
+        rwlj_testing_expect_value(s, expected);
     }
 
     TEST("Prints and doesn't go beyong buffer")
     {
-#define STRING                                                                 \
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 #define BUF_LEN (rwlj_kb(1) / 16)
 
         u8 buf[BUF_LEN] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         for (isize i = 0; i < buf_slice.len; i += 1) {
             buf_slice.data[i] = 'a';
         }
 
-        rwljString string = { cast(char *) buf_slice.data,
-                              rwlj_bprintf(buf_slice, STRING) };
+        rwljString s = rwlj_string_from_fmt(&buf_slice, STRING);
         rwljString expected = { STRING, BUF_LEN };
-        rwlj_testing_expect_value(string, expected);
+        rwlj_testing_expect_value(s, expected);
 #undef BUF_LEN
-#undef STRING
     }
+#undef STRING
 
     TEST("Formats signed integer")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         {
             isize value = RWLJ_I64_MIN;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%ld|", value);
             rwljString expected = STR_LIT("|-9223372036854775808|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = RWLJ_I64_MAX;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%ld|", value);
             rwljString expected = STR_LIT("|9223372036854775807|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
     }
 
     TEST("Formats unsigned integer")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         {
             usize value = RWLJ_U64_MIN;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%lu|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lu|", value);
             rwljString expected = STR_LIT("|0|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             usize value = RWLJ_U64_MAX;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%lu|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lu|", value);
             rwljString expected = STR_LIT("|18446744073709551615|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Formats base 2")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lb|", value);
+            rwljString expected =
+                STR_LIT("|1101101001101000101110010010111001001001|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lb|", value);
+            rwljString expected =
+                STR_LIT("|0b1101101001101000101110010010111001001001|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+    TEST("Formats base 8")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lo|", value);
+            rwljString expected = STR_LIT("|15515056227111|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lo|", value);
+            rwljString expected = STR_LIT("|0o15515056227111|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+    TEST("Formats base 16")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lx|", value);
+            rwljString expected = STR_LIT("|da68b92e49|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lx|", value);
+            rwljString expected = STR_LIT("|0xda68b92e49|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lX|", value);
+            rwljString expected = STR_LIT("|0XDA68B92E49|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Prints pointer")
+    {
+        u8 buf1[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf1_slice = rwlj_slice_from_buf(buf1);
+
+        u8 buf2[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf2_slice = rwlj_slice_from_buf(buf2);
+
+        {
+            void *addr = buf1;
+            rwljString s = rwlj_string_from_fmt(&buf1_slice, "|%p|", addr);
+            rwljString expected = {
+                cast(char *) buf2_slice.data,
+                snprintf(
+                    cast(char *) buf2_slice.data, buf2_slice.len, "|%p|", addr
+                )
+            };
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            void *addr = NULL;
+            rwljString s = rwlj_string_from_fmt(&buf1_slice, "|%p|", addr);
+            rwljString expected = STR_LIT("|<nil>|");
+            rwlj_testing_expect_value(s, expected);
         }
     }
 
     TEST("Prints sign")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         {
             isize value = 22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%+ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%+ld|", value);
             rwljString expected = STR_LIT("|+22|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%+ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%+ld|", value);
             rwljString expected = STR_LIT("|-22|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
     }
 
     TEST("Prints leading blank")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         {
             isize value = 22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|% ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% ld|", value);
             rwljString expected = STR_LIT("| 22|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|% ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% ld|", value);
             rwljString expected = STR_LIT("|-22|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
     }
 
     TEST("Ignore certain combinations of flags")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         {
             isize value = 22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|% +ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% +ld|", value);
             rwljString expected = STR_LIT("|+22|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|% +ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% +ld|", value);
             rwljString expected = STR_LIT("|-22|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
     }
 
     TEST("Pads with 0s")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         {
             isize value = 22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
             rwljString expected = STR_LIT("|00022|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
             rwljString expected = STR_LIT("|-0022|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 0;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
             rwljString expected = STR_LIT("|00000|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 12345;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
             rwljString expected = STR_LIT("|12345|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 1234567;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%05ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
             rwljString expected = STR_LIT("|1234567|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = 2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05g|", value);
+            rwljString expected = STR_LIT("|002.5|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = -2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05g|", value);
+            rwljString expected = STR_LIT("|-02.5|");
+            rwlj_testing_expect_value(s, expected);
         }
     }
 
     TEST("Left justifies")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 buf_slice = { buf, rwlj_size_of_buf(buf) };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         {
             isize value = 22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
             rwljString expected = STR_LIT("|22   |");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
             rwljString expected = STR_LIT("|-22  |");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 0;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
             rwljString expected = STR_LIT("|0    |");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 12345;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
             rwljString expected = STR_LIT("|12345|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 1234567;
-            rwljString string = { cast(char *) buf_slice.data,
-                                  rwlj_bprintf(buf_slice, "|%-5ld|", value) };
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
             rwljString expected = STR_LIT("|1234567|");
-            rwlj_testing_expect_value(string, expected);
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = 2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5g|", value);
+            rwljString expected = STR_LIT("|2.5  |");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = -2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5g|", value);
+            rwljString expected = STR_LIT("|-2.5 |");
+            rwlj_testing_expect_value(s, expected);
         }
     }
+
+    TEST("Left justify overrides zero pads")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        isize value = 22;
+        rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-05ld|", value);
+        rwljString expected = STR_LIT("|22   |");
+        rwlj_testing_expect_value(s, expected);
+    }
+
+    TEST("") {}
+
     typedef struct rwljF64_Test {
         char *fmt;
         f64 value;
@@ -1188,16 +1287,13 @@ test_formatting(void)
         rwljF64_Test tests[] = { F64_TEST_TABLE(f) };
 
         u8 ftoa_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
 
         u8 printf_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 printf_slice = { printf_buf,
-                                      rwlj_size_of_buf(printf_buf) };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
         for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
             rwljF64_Test test = tests[i];
-
-            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
 
             stbsp_snprintf(
                 cast(char *) printf_slice.data,
@@ -1205,64 +1301,23 @@ test_formatting(void)
                 test.fmt,
                 test.value
             );
-            isize printf_len =
-                cast(isize) strlen(cast(char *) printf_slice.data);
-
-            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
-            rwljString printf_string = { cast(char *) printf_slice.data,
-                                         printf_len };
-
-            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
-                rwlj_printfln(
-                    "%ld - expected { %S, %ld }, got { %S, %ld }",
-                    i,
-                    printf_string,
-                    printf_len,
-                    rwlj_string,
-                    rwlj_len
-                );
-                success = false;
-            }
-        }
-    }
-
-    TEST("Formats floats with g")
-    {
-        rwljF64_Test tests[] = { F64_TEST_TABLE(g) };
-
-        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
-
-        u8 printf_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 printf_slice = { printf_buf,
-                                      rwlj_size_of_buf(printf_buf) };
-
-        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
-            rwljF64_Test test = tests[i];
-
-            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
-
-            stbsp_snprintf(
-                cast(char *) printf_slice.data,
-                cast(i32) printf_slice.len,
-                test.fmt,
-                test.value
+            rwljString printf_string = rwlj_string(
+                printf_slice.data,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
             );
-            isize printf_len =
-                cast(isize) strlen(cast(char *) printf_slice.data);
 
-            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
-            rwljString printf_string = { cast(char *) printf_slice.data,
-                                         printf_len };
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
 
             if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
                 rwlj_printfln(
                     "%ld - expected { %S, %ld }, got { %S, %ld }",
                     i,
                     printf_string,
-                    printf_len,
+                    printf_string.len,
                     rwlj_string,
-                    rwlj_len
+                    rwlj_string.len
                 );
                 success = false;
             }
@@ -1274,16 +1329,13 @@ test_formatting(void)
         rwljF64_Test tests[] = { F64_TEST_TABLE(e) };
 
         u8 ftoa_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
 
         u8 printf_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 printf_slice = { printf_buf,
-                                      rwlj_size_of_buf(printf_buf) };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
         for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
             rwljF64_Test test = tests[i];
-
-            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
 
             stbsp_snprintf(
                 cast(char *) printf_slice.data,
@@ -1291,21 +1343,65 @@ test_formatting(void)
                 test.fmt,
                 test.value
             );
-            isize printf_len =
-                cast(isize) strlen(cast(char *) printf_slice.data);
+            rwljString printf_string = rwlj_string(
+                printf_slice.data,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
 
-            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
-            rwljString printf_string = { cast(char *) printf_slice.data,
-                                         printf_len };
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
 
             if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
                 rwlj_printfln(
                     "%ld - expected { %S, %ld }, got { %S, %ld }",
                     i,
                     printf_string,
-                    printf_len,
+                    printf_string.len,
                     rwlj_string,
-                    rwlj_len
+                    rwlj_string.len
+                );
+                success = false;
+            }
+        }
+    }
+
+    TEST("Formats floats with g")
+    {
+        rwljF64_Test tests[] = { F64_TEST_TABLE(g) };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
+
+        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
+            rwljF64_Test test = tests[i];
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            rwljString printf_string = rwlj_string(
+                cast(char *) printf_slice.data,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
+
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_string.len,
+                    rwlj_string,
+                    rwlj_string.len
                 );
                 success = false;
             }
@@ -1317,16 +1413,13 @@ test_formatting(void)
         rwljF64_Test tests[] = { F64_TEST_TABLE(a) };
 
         u8 ftoa_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
 
         u8 printf_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 printf_slice = { printf_buf,
-                                      rwlj_size_of_buf(printf_buf) };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
         for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
             rwljF64_Test test = tests[i];
-
-            isize rwlj_len = rwlj_bprintf(ftoa_slice, test.fmt, test.value);
 
             stbsp_snprintf(
                 cast(char *) printf_slice.data,
@@ -1334,21 +1427,23 @@ test_formatting(void)
                 test.fmt,
                 test.value
             );
-            isize printf_len =
-                cast(isize) strlen(cast(char *) printf_slice.data);
+            rwljString printf_string = rwlj_string(
+                cast(char *) printf_slice.data,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
 
-            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
-            rwljString printf_string = { cast(char *) printf_slice.data,
-                                         printf_len };
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
 
             if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
                 rwlj_printfln(
                     "%ld - expected { %S, %ld }, got { %S, %ld }",
                     i,
                     printf_string,
-                    printf_len,
+                    printf_string.len,
                     rwlj_string,
-                    rwlj_len
+                    rwlj_string.len
                 );
                 success = false;
             }
@@ -1403,17 +1498,13 @@ test_formatting(void)
         };
 
         u8 ftoa_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 ftoa_slice = { ftoa_buf, rwlj_size_of_buf(ftoa_buf) };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
 
         u8 printf_buf[rwlj_kb(1)] = { 0 };
-        rwljSlice_U8 printf_slice = { printf_buf,
-                                      rwlj_size_of_buf(printf_buf) };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
         for (isize i = 0; i < rwlj_size_of_array(tests_single); i += 1) {
             rwljF64_Single_Test test = tests_single[i];
-
-            isize rwlj_len =
-                rwlj_bprintf(ftoa_slice, test.printf_fmt, test.value);
 
             stbsp_snprintf(
                 cast(char *) printf_slice.data,
@@ -1421,21 +1512,23 @@ test_formatting(void)
                 test.printf_fmt,
                 test.value
             );
-            isize printf_len =
-                cast(isize) strlen(cast(char *) printf_slice.data);
+            rwljString printf_string = rwlj_string(
+                cast(char *) printf_slice.data,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
 
-            rwljString rwlj_string = { cast(char *) ftoa_slice.data, rwlj_len };
-            rwljString printf_string = { cast(char *) printf_slice.data,
-                                         printf_len };
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.printf_fmt, test.value);
 
             if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
                 rwlj_printfln(
                     "%ld - expected { %S, %ld }, got { %S, %ld }",
                     i,
                     printf_string,
-                    printf_len,
+                    printf_string.len,
                     rwlj_string,
-                    rwlj_len
+                    rwlj_string.len
                 );
                 success = false;
             }
@@ -1444,10 +1537,6 @@ test_formatting(void)
         for (isize i = 0; i < rwlj_size_of_array(tests_double); i += 1) {
             rwljF64_Double_Test test = tests_double[i];
 
-            isize ftoa_len = rwlj_bprintf(
-                ftoa_slice, test.printf_fmt, test.value[0], test.value[1]
-            );
-
             stbsp_snprintf(
                 cast(char *) printf_slice.data,
                 cast(usize) printf_slice.len,
@@ -1455,21 +1544,24 @@ test_formatting(void)
                 test.value[0],
                 test.value[1]
             );
-            isize printf_len =
-                cast(isize) strlen(cast(char *) printf_slice.data);
+            rwljString printf_string = rwlj_string(
+                cast(char *) printf_slice.data,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
 
-            rwljString ftoa_string = { cast(char *) ftoa_slice.data, ftoa_len };
-            rwljString printf_string = { cast(char *) printf_slice.data,
-                                         printf_len };
+            rwljString ftoa_string = rwlj_string_from_fmt(
+                &ftoa_slice, test.printf_fmt, test.value[0], test.value[1]
+            );
 
             if (!rwlj_string_are_equal(ftoa_string, printf_string)) {
                 rwlj_printfln(
                     "%ld - expected { %S, %ld }, got { %S, %ld }",
                     i,
                     printf_string,
-                    printf_len,
+                    printf_string.len,
                     ftoa_string,
-                    ftoa_len
+                    ftoa_string.len
                 );
                 success = false;
             }
