@@ -1059,6 +1059,23 @@ test_formatting(void)
         }
     }
 
+    TEST("Prints boolean")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%t|", true);
+            rwljString expected = STR_LIT("|true|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%t|", false);
+            rwljString expected = STR_LIT("|false|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
     TEST("Prints sign")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
