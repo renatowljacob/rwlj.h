@@ -253,7 +253,8 @@ typedef double f64;
 #define rwlj_memory_copy(dst, src, size) memcpy(dst, src, size)
 #define rwlj_memory_move(dst, src, size) memmove(dst, src, size)
 #define rwlj_memory_set(mem, byte, size) memset(mem, byte, size)
-#define rwlj_memory_zero(mem, size)      rwlj_memory_set(mem, 0, size)
+void *rwlj_memory_swap(void *a, void *b, usize size);
+#define rwlj_memory_zero(mem, size) rwlj_memory_set(mem, 0, size)
 
 /*
  *  Math
@@ -356,17 +357,6 @@ void rwlj_arena_temp_init(rwljArena_Temp *arena_temp, rwljArena *arena);
 void rwlj_arena_temp_free_all(rwljArena_Temp *arena_temp);
 
 /*
- *  Algorithms
- */
-
-typedef isize (*rwljSort_Proc)(void *a, void *b);
-
-void rwlj_sort(void *data, isize len, isize elem_size);
-void rwlj_sort_proc(void *data, isize len, isize elem_size, rwljSort_Proc proc);
-void rwlj_quick_sort(void *data, isize len, isize elem_size);
-void rwlj_insertion_sort(void *data, isize len, isize elem_size);
-
-/*
  *  Data Structures
  */
 
@@ -398,11 +388,13 @@ GENERIC_ARRAY(i16, I16);
 GENERIC_ARRAY(i32, I32);
 GENERIC_ARRAY(i64, I64);
 GENERIC_ARRAY(isize, Isize);
+GENERIC_ARRAY(i128, I128);
 GENERIC_ARRAY(u8, U8);
 GENERIC_ARRAY(u16, U16);
 GENERIC_ARRAY(u32, U32);
 GENERIC_ARRAY(u64, U64);
 GENERIC_ARRAY(usize, Usize);
+GENERIC_ARRAY(u128, U128);
 GENERIC_ARRAY(f16, F16);
 GENERIC_ARRAY(f32, F32);
 GENERIC_ARRAY(f64, F64);
@@ -412,11 +404,14 @@ GENERIC_ARRAY(b16, B16);
 GENERIC_ARRAY(b32, B32);
 GENERIC_ARRAY(b64, B64);
 GENERIC_ARRAY(bsize, Bsize);
+GENERIC_ARRAY(void, Void);
 
 #define rwlj_slice(ptr, start, end) { &(ptr)[start], rwlj_max(end - start, 0) }
 #define rwlj_slice_from_array(array)                                           \
     rwlj_slice(array, 0, rwlj_size_of_array(array))
 #define rwlj_slice_from_buf(buf) rwlj_slice_from_array(buf)
+
+#define rwlj_slice_unpack(slice) (slice)->data, (slice)->len
 
 #define rwlj_slice_get(slice, index)                                           \
     (index >= 0 && index < (slice)->len ? (slice)->data[index] : 0)
@@ -565,6 +560,25 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
 /* hashmaps */
 
 /*
+ *  Algorithms
+ */
+
+#define RWLJ_COMPARE_PROC(proc) isize proc(void *a, void *b)
+typedef RWLJ_COMPARE_PROC(*rwljCompare_Proc);
+
+inline bsize rwlj_sort_compare_isize(void *a, void *b);
+inline bsize rwlj_sort_compare_usize(void *a, void *b);
+void rwlj_sort(void *data, isize len, isize elem_size, rwljCompare_Proc proc);
+void
+rwlj_quick_sort(void *data, isize len, isize elem_size, rwljCompare_Proc proc);
+void rwlj_insertion_sort(
+    void *data,
+    isize len,
+    isize elem_size,
+    rwljCompare_Proc proc
+);
+
+/*
  *  Time
  */
 
@@ -701,6 +715,50 @@ rwljString rwlj_sbprintln(rwljString_Builder *sb, rwljString s);
  */
 
 /*
+ *  Memory
+ */
+
+void *
+rwlj_memory_swap(void *a, void *b, usize size)
+{
+    if (a == b || size == 0) {
+        return a;
+    }
+
+    if (size == 1) {
+        rwlj_swap(u8, *cast(u8 *) a, *cast(u8 *) b);
+    } else if (size == 2) {
+        rwlj_swap(u16, *cast(u16 *) a, *cast(u16 *) b);
+    } else if (size == 4) {
+        rwlj_swap(u32, *cast(u32 *) a, *cast(u32 *) b);
+    } else if (size == 8) {
+        rwlj_swap(u64, *cast(u64 *) a, *cast(u64 *) b);
+    } else if (size < rwlj_size_of(u64)) {
+        u8 tmp[8] = { 0 };
+        rwlj_memory_copy(tmp, a, size);
+        rwlj_memory_copy(a, b, size);
+        rwlj_memory_copy(b, tmp, size);
+    } else {
+#define SIZE 256
+        u8 tmp[SIZE] = { 0 };
+        u8 *a2 = a;
+        u8 *b2 = b;
+        while (size > 0) {
+            usize sz = rwlj_min(size, SIZE);
+
+            rwlj_memory_copy(tmp, a2, sz);
+            rwlj_memory_copy(a2, b2, sz);
+            rwlj_memory_copy(b2, tmp, sz);
+            a2 += sz;
+            b2 += sz;
+            size -= sz;
+        }
+    }
+
+    return b;
+}
+
+/*
  *  Math
  */
 
@@ -745,46 +803,82 @@ rwlj_classify(f64 f)
  *  Algorithms
  */
 
-void
-rwlj_sort(void *data, isize len, isize elem_size)
+inline RWLJ_COMPARE_PROC(rwlj_sort_compare_isize)
 {
-    if (len == 0 || elem_size == 0 || data == NULL) {
-        return;
-    }
+    return *cast(isize *) a - *cast(isize *) b;
+}
 
-    rwlj_not_implemented();
+inline RWLJ_COMPARE_PROC(rwlj_sort_compare_usize)
+{
+    return cast(isize)(*cast(usize *) a - *cast(usize *) b);
 }
 
 void
-rwlj_sort_proc(void *data, isize len, isize elem_size, rwljSort_Proc proc)
+rwlj_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
 {
-    if (len == 0 || elem_size == 0 || data == NULL || proc == NULL) {
+    if (data == NULL || len <= 1 || size == 0 || proc == NULL) {
         return;
     }
 
-    rwlj_not_implemented();
+    if (len <= 8) {
+        return rwlj_insertion_sort(data, len, size, proc);
+    }
+
+    return rwlj_quick_sort(data, len, size, proc);
+}
+
+// TODO: manage my own stack or just recursion xD
+void
+rwlj_quick_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
+{
+    if (data == NULL || len <= 1 || size == 0 || proc == NULL) {
+        return;
+    } else if (len <= 8) {
+        return rwlj_insertion_sort(data, len, size, proc);
+    }
+
+    u8 *buf = data;
+    isize cap = len * size;
+
+    isize median = 0;
+    {
+        isize leftmost = 0;
+        isize rightmost = cap - size;
+        isize middle = rwlj_align_pow2(cap / 2, size);
+
+        bool a = proc(&buf[leftmost], &buf[middle]) > 0;
+        bool b = proc(&buf[middle], &buf[rightmost]) > 0;
+        bool c = proc(&buf[rightmost], &buf[leftmost]) > 0;
+        if (!a && b) {
+            median = middle;
+        } else if (!b && c) {
+            median = rightmost;
+        } else {
+            median = leftmost;
+        }
+    }
+
+    for (isize i = size; i < len; i += 1) {
+    }
 }
 
 void
-rwlj_quick_sort(void *data, isize len, isize elem_size)
+rwlj_insertion_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
 {
-    if (len == 0 || elem_size == 0 || data == NULL) {
+    if (data == NULL || len <= 1 || size == 0 || proc == NULL) {
         return;
     }
 
-    rwlj_not_implemented();
-    for (isize i = 0; i < len; i += 1) {
-    }
-}
+    u8 *buf = data;
+    isize cap = len * size;
 
-void
-rwlj_insertion_sort(void *data, isize len, isize elem_size)
-{
-    if (len == 0 || elem_size == 0 || data == NULL) {
-        return;
+    for (isize i = size; i < cap; i += size) {
+        isize key = i;
+        for (isize j = i - size; j >= 0 && proc(&buf[j], &buf[key]) > 0;
+             j -= size, key -= size) {
+            rwlj_memory_swap(&buf[j], &buf[key], cast(usize) size);
+        }
     }
-
-    rwlj_not_implemented();
 }
 
 /*
@@ -2503,15 +2597,6 @@ __rwlj_bprintf_va(
             }
             break;
         }
-
-        // TODO: Oh, just thought about printing arrays *recursively* (it'll be
-        // 1 depth so it'll be fine)
-        // Just need to make the distinction between primitive data types and
-        // arrays (print arrays with a loop using bprintf with the outer
-        // function's buffer)
-        // Unfortunately it doesn't "scale" well (will need to add new
-        // conversion specifiers for each new type), so I guess the next step is
-        // providing a custom callback for those
 
         // Parse conversion specifiers
         u8 conv_buf[512] = { 0 };
