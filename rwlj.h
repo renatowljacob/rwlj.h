@@ -564,7 +564,7 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
  */
 
 #define RWLJ_COMPARE_PROC(proc) isize proc(void *a, void *b)
-typedef RWLJ_COMPARE_PROC(*rwljCompare_Proc);
+typedef RWLJ_COMPARE_PROC(rwljCompare_Proc);
 
 inline bsize rwlj_sort_compare_isize(void *a, void *b);
 inline bsize rwlj_sort_compare_usize(void *a, void *b);
@@ -739,12 +739,12 @@ rwlj_memory_swap(void *a, void *b, usize size)
         rwlj_memory_copy(a, b, size);
         rwlj_memory_copy(b, tmp, size);
     } else {
-#define SIZE 256
-        u8 tmp[SIZE] = { 0 };
+#define BUF_SIZE 256
+        u8 tmp[BUF_SIZE] = { 0 };
         u8 *a2 = a;
         u8 *b2 = b;
         while (size > 0) {
-            usize sz = rwlj_min(size, SIZE);
+            usize sz = rwlj_min(size, BUF_SIZE);
 
             rwlj_memory_copy(tmp, a2, sz);
             rwlj_memory_copy(a2, b2, sz);
@@ -753,6 +753,7 @@ rwlj_memory_swap(void *a, void *b, usize size)
             b2 += sz;
             size -= sz;
         }
+#undef BUF_SIZE
     }
 
     return b;
@@ -819,7 +820,6 @@ rwlj_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
     if (data == NULL || len <= 1 || size == 0 || proc == NULL) {
         return;
     }
-
     if (len <= 8) {
         return rwlj_insertion_sort(data, len, size, proc);
     }
@@ -827,38 +827,63 @@ rwlj_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
     return rwlj_quick_sort(data, len, size, proc);
 }
 
-// TODO: manage my own stack or just recursion xD
+// TODO: manage my own stack or just recursion xD (or NONE.)
 void
 rwlj_quick_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
 {
     if (data == NULL || len <= 1 || size == 0 || proc == NULL) {
         return;
-    } else if (len <= 8) {
-        return rwlj_insertion_sort(data, len, size, proc);
     }
 
     u8 *buf = data;
-    isize cap = len * size;
 
-    isize median = 0;
-    {
-        isize leftmost = 0;
-        isize rightmost = cap - size;
-        isize middle = rwlj_align_pow2(cap / 2, size);
-
-        bool a = proc(&buf[leftmost], &buf[middle]) > 0;
-        bool b = proc(&buf[middle], &buf[rightmost]) > 0;
-        bool c = proc(&buf[rightmost], &buf[leftmost]) > 0;
-        if (!a && b) {
-            median = middle;
-        } else if (!b && c) {
-            median = rightmost;
-        } else {
-            median = leftmost;
+    // TODO: How do I divide arrays with lengths not powers of 2?
+    // I could offload the leftovers to the last iteration of the loops, but
+    // that means insertion sort will suck very hard
+    // Make a buffer with all the lengths of the parts?
+    isize parts = 1; // in powers of two
+    while (true) {
+        isize part_len = len / parts;
+        isize part_size = part_len * size;
+        if (part_len <= 8) {
+            for (isize i = 0; i < parts; i += 1) {
+                rwlj_insertion_sort(&buf[i * part_size], part_len, size, proc);
+            }
+            break;
         }
-    }
+        for (isize i = 0; i < parts; i += 1) {
+            isize leftmost = part_size * i;
+            isize rightmost = part_size * (i + 1) - size;
+            isize middle =
+                rwlj_align_pow2(part_size * (i + 1) / 2 - size, size);
+            bool a = proc(&buf[leftmost], &buf[middle]) > 0;
+            bool b = proc(&buf[middle], &buf[rightmost]) > 0;
+            bool c = proc(&buf[rightmost], &buf[leftmost]) > 0;
 
-    for (isize i = size; i < len; i += 1) {
+            isize pivot = leftmost;
+            isize offset = leftmost;
+            if (a == b) {
+                pivot = middle;
+            } else if (b == c) {
+                pivot = rightmost;
+            } else {
+                offset += size;
+            }
+
+            for (isize j = offset + size; j < part_size; j += size) {
+                if (proc(&buf[pivot], &buf[j]) > 0) {
+                    rwlj_memory_swap(&buf[offset], &buf[j], cast(usize) size);
+                    offset += size;
+                    j = offset + size;
+
+                    continue;
+                }
+            }
+            // rwlj_memory_swap(
+            //         &buf[pivot], &buf[offset], cast(usize) size
+            // );
+        }
+        parts <<= 1;
     }
 }
 
@@ -870,9 +895,9 @@ rwlj_insertion_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
     }
 
     u8 *buf = data;
-    isize cap = len * size;
+    isize buf_size = len * size;
 
-    for (isize i = size; i < cap; i += size) {
+    for (isize i = size; i < buf_size; i += size) {
         isize key = i;
         for (isize j = i - size; j >= 0 && proc(&buf[j], &buf[key]) > 0;
              j -= size, key -= size) {
