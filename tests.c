@@ -9,6 +9,8 @@
 #define RWLJ_IMPLEMENTATION
 #include "rwlj.h"
 
+// The dumbest tests you'll ever gonna see
+
 typedef void (*rwljTest_Proc)(void);
 
 void
@@ -127,7 +129,7 @@ test_arena(void)
 #define ARENA_TOTAL_SIZE rwlj_mb(1)
         u8 buf[ARENA_TOTAL_SIZE] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwlj_testing_expect(arena.backing_buf != NULL);
         rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_BUFFER);
@@ -141,7 +143,7 @@ test_arena(void)
     {
         u8 buf[rwlj_mb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         u8 *allocation = rwlj_arena_alloc(&arena, arena.total_size);
 
@@ -155,7 +157,7 @@ test_arena(void)
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         u8 *allocation = rwlj_arena_alloc(&arena, 0);
 
@@ -169,10 +171,10 @@ test_arena(void)
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         usize allocation_num = 8;
-        usize total_allocation_size = rwlj_size_of_buf(buf) / allocation_num;
+        usize total_allocation_size = rwlj_count_of(buf) / allocation_num;
         for (usize i = 0; i < allocation_num * 2; i += 1) {
             u8 *allocation = rwlj_arena_alloc(&arena, total_allocation_size);
             usize iter_allocation_size = total_allocation_size * (i + 1);
@@ -197,7 +199,7 @@ test_arena(void)
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         usize allocation_size = arena.total_size / 4;
         usize allocated_memory = 0;
@@ -225,7 +227,7 @@ test_arena(void)
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         usize allocation_size = arena.total_size / 4;
         usize allocated_memory = 0;
@@ -385,7 +387,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -405,9 +407,7 @@ test_array(void)
 
         rwlj_testing_expect(array.data != NULL);
         rwlj_testing_expect_value(array.kind, RWLJ_ARRAY_FIXED);
-        rwlj_testing_expect_value(
-            array.capacity, rwlj_size_of_array(backing_array)
-        );
+        rwlj_testing_expect_value(array.capacity, rwlj_count_of(backing_array));
     }
 
     TEST("Creates and reserves dynamic array")
@@ -415,7 +415,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
@@ -433,7 +433,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic_reserve(&array, 0, &arena);
@@ -450,7 +450,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
@@ -469,13 +469,13 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
         rwlj_array_init_dynamic_reserve(&array, array_cap, &arena);
 
-        isize max_len = rwlj_size_of_buf(buf) / rwlj_size_of(isize);
+        isize max_len = rwlj_count_of(buf) / rwlj_size_of(isize);
         rwlj_testing_expect(rwlj_array_resize(&array, max_len));
         rwlj_testing_expect_value(array.capacity, max_len);
 
@@ -488,7 +488,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
@@ -513,7 +513,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         u8 *_ = rwlj_arena_alloc(&arena, 128);
         _ = rwlj_arena_alloc(&arena, 128);
@@ -540,7 +540,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
@@ -560,7 +560,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -583,7 +583,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -612,7 +612,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -638,7 +638,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -661,7 +661,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -690,7 +690,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -716,7 +716,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -739,7 +739,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -768,7 +768,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -794,7 +794,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -820,7 +820,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -847,7 +847,7 @@ test_array(void)
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_buf(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -881,7 +881,7 @@ test_formatting(void)
         rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         rwljString s = rwlj_string_from_fmt(&buf_slice, "Hello, World!");
-        rwljString expected = STR_LIT("Hello, World!");
+        rwljString expected = STRING("Hello, World!");
         rwlj_testing_expect_value(s, expected);
     }
 
@@ -891,11 +891,11 @@ test_formatting(void)
         rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
         rwljString s = rwlj_string_from_fmt(&buf_slice, "");
-        rwljString expected = STR_LIT("");
+        rwljString expected = STRING("");
         rwlj_testing_expect_value(s, expected);
     }
 
-#define STRING                                                                 \
+#define TEST_STRING                                                            \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     TEST("Prints the whole buffer")
@@ -908,8 +908,8 @@ test_formatting(void)
             buf_slice.data[i] = 'a';
         }
 
-        rwljString s = rwlj_string_from_fmt(&buf_slice, STRING);
-        rwljString expected = STR_LIT(STRING);
+        rwljString s = rwlj_string_from_fmt(&buf_slice, TEST_STRING);
+        rwljString expected = STRING(TEST_STRING);
         rwlj_testing_expect_value(s, expected);
     }
 
@@ -924,12 +924,12 @@ test_formatting(void)
             buf_slice.data[i] = 'a';
         }
 
-        rwljString s = rwlj_string_from_fmt(&buf_slice, STRING);
-        rwljString expected = { STRING, BUF_LEN };
+        rwljString s = rwlj_string_from_fmt(&buf_slice, TEST_STRING);
+        rwljString expected = { TEST_STRING, BUF_LEN };
         rwlj_testing_expect_value(s, expected);
 #undef BUF_LEN
     }
-#undef STRING
+#undef TEST_STRING
 
     TEST("Formats signed integer")
     {
@@ -939,13 +939,13 @@ test_formatting(void)
         {
             isize value = RWLJ_I64_MIN;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%ld|", value);
-            rwljString expected = STR_LIT("|-9223372036854775808|");
+            rwljString expected = STRING("|-9223372036854775808|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = RWLJ_I64_MAX;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%ld|", value);
-            rwljString expected = STR_LIT("|9223372036854775807|");
+            rwljString expected = STRING("|9223372036854775807|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -958,13 +958,13 @@ test_formatting(void)
         {
             usize value = RWLJ_U64_MIN;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lu|", value);
-            rwljString expected = STR_LIT("|0|");
+            rwljString expected = STRING("|0|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             usize value = RWLJ_U64_MAX;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lu|", value);
-            rwljString expected = STR_LIT("|18446744073709551615|");
+            rwljString expected = STRING("|18446744073709551615|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -978,14 +978,14 @@ test_formatting(void)
             usize value = 938059837001llu;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lb|", value);
             rwljString expected =
-                STR_LIT("|1101101001101000101110010010111001001001|");
+                STRING("|1101101001101000101110010010111001001001|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             usize value = 938059837001llu;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lb|", value);
             rwljString expected =
-                STR_LIT("|0b1101101001101000101110010010111001001001|");
+                STRING("|0b1101101001101000101110010010111001001001|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -997,13 +997,13 @@ test_formatting(void)
         {
             usize value = 938059837001llu;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lo|", value);
-            rwljString expected = STR_LIT("|15515056227111|");
+            rwljString expected = STRING("|15515056227111|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             usize value = 938059837001llu;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lo|", value);
-            rwljString expected = STR_LIT("|0o15515056227111|");
+            rwljString expected = STRING("|0o15515056227111|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1015,19 +1015,19 @@ test_formatting(void)
         {
             usize value = 938059837001llu;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lx|", value);
-            rwljString expected = STR_LIT("|da68b92e49|");
+            rwljString expected = STRING("|da68b92e49|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             usize value = 938059837001llu;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lx|", value);
-            rwljString expected = STR_LIT("|0xda68b92e49|");
+            rwljString expected = STRING("|0xda68b92e49|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             usize value = 938059837001llu;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lX|", value);
-            rwljString expected = STR_LIT("|0XDA68B92E49|");
+            rwljString expected = STRING("|0XDA68B92E49|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1054,7 +1054,7 @@ test_formatting(void)
         {
             void *addr = NULL;
             rwljString s = rwlj_string_from_fmt(&buf1_slice, "|%p|", addr);
-            rwljString expected = STR_LIT("|<nil>|");
+            rwljString expected = STRING("|<nil>|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1066,12 +1066,12 @@ test_formatting(void)
 
         {
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%t|", true);
-            rwljString expected = STR_LIT("|true|");
+            rwljString expected = STRING("|true|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%t|", false);
-            rwljString expected = STR_LIT("|false|");
+            rwljString expected = STRING("|false|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1084,13 +1084,13 @@ test_formatting(void)
         {
             isize value = 22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%+ld|", value);
-            rwljString expected = STR_LIT("|+22|");
+            rwljString expected = STRING("|+22|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%+ld|", value);
-            rwljString expected = STR_LIT("|-22|");
+            rwljString expected = STRING("|-22|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1103,13 +1103,13 @@ test_formatting(void)
         {
             isize value = 22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|% ld|", value);
-            rwljString expected = STR_LIT("| 22|");
+            rwljString expected = STRING("| 22|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|% ld|", value);
-            rwljString expected = STR_LIT("|-22|");
+            rwljString expected = STRING("|-22|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1122,13 +1122,13 @@ test_formatting(void)
         {
             isize value = 22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|% +ld|", value);
-            rwljString expected = STR_LIT("|+22|");
+            rwljString expected = STRING("|+22|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|% +ld|", value);
-            rwljString expected = STR_LIT("|-22|");
+            rwljString expected = STRING("|-22|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1141,43 +1141,43 @@ test_formatting(void)
         {
             isize value = 22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
-            rwljString expected = STR_LIT("|00022|");
+            rwljString expected = STRING("|00022|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
-            rwljString expected = STR_LIT("|-0022|");
+            rwljString expected = STRING("|-0022|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 0;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
-            rwljString expected = STR_LIT("|00000|");
+            rwljString expected = STRING("|00000|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 12345;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
-            rwljString expected = STR_LIT("|12345|");
+            rwljString expected = STRING("|12345|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 1234567;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
-            rwljString expected = STR_LIT("|1234567|");
+            rwljString expected = STRING("|1234567|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             f64 value = 2.5;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05g|", value);
-            rwljString expected = STR_LIT("|002.5|");
+            rwljString expected = STRING("|002.5|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             f64 value = -2.5;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05g|", value);
-            rwljString expected = STR_LIT("|-02.5|");
+            rwljString expected = STRING("|-02.5|");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1190,43 +1190,43 @@ test_formatting(void)
         {
             isize value = 22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
-            rwljString expected = STR_LIT("|22   |");
+            rwljString expected = STRING("|22   |");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = -22;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
-            rwljString expected = STR_LIT("|-22  |");
+            rwljString expected = STRING("|-22  |");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 0;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
-            rwljString expected = STR_LIT("|0    |");
+            rwljString expected = STRING("|0    |");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 12345;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
-            rwljString expected = STR_LIT("|12345|");
+            rwljString expected = STRING("|12345|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             isize value = 1234567;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
-            rwljString expected = STR_LIT("|1234567|");
+            rwljString expected = STRING("|1234567|");
             rwlj_testing_expect_value(s, expected);
         }
         {
             f64 value = 2.5;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5g|", value);
-            rwljString expected = STR_LIT("|2.5  |");
+            rwljString expected = STRING("|2.5  |");
             rwlj_testing_expect_value(s, expected);
         }
         {
             f64 value = -2.5;
             rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5g|", value);
-            rwljString expected = STR_LIT("|-2.5 |");
+            rwljString expected = STRING("|-2.5 |");
             rwlj_testing_expect_value(s, expected);
         }
     }
@@ -1238,7 +1238,7 @@ test_formatting(void)
 
         isize value = 22;
         rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-05ld|", value);
-        rwljString expected = STR_LIT("|22   |");
+        rwljString expected = STRING("|22   |");
         rwlj_testing_expect_value(s, expected);
     }
 
@@ -1309,7 +1309,7 @@ test_formatting(void)
         u8 printf_buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
-        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
             rwljF64_Test test = tests[i];
 
             stbsp_snprintf(
@@ -1351,7 +1351,7 @@ test_formatting(void)
         u8 printf_buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
-        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
             rwljF64_Test test = tests[i];
 
             stbsp_snprintf(
@@ -1393,7 +1393,7 @@ test_formatting(void)
         u8 printf_buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
-        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
             rwljF64_Test test = tests[i];
 
             stbsp_snprintf(
@@ -1435,7 +1435,7 @@ test_formatting(void)
         u8 printf_buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
-        for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
             rwljF64_Test test = tests[i];
 
             stbsp_snprintf(
@@ -1520,7 +1520,7 @@ test_formatting(void)
         u8 printf_buf[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
 
-        for (isize i = 0; i < rwlj_size_of_array(tests_single); i += 1) {
+        for (isize i = 0; i < rwlj_count_of(tests_single); i += 1) {
             rwljF64_Single_Test test = tests_single[i];
 
             stbsp_snprintf(
@@ -1551,7 +1551,7 @@ test_formatting(void)
             }
         }
 
-        for (isize i = 0; i < rwlj_size_of_array(tests_double); i += 1) {
+        for (isize i = 0; i < rwlj_count_of(tests_double); i += 1) {
             rwljF64_Double_Test test = tests_double[i];
 
             stbsp_snprintf(
@@ -1590,6 +1590,116 @@ void
 test_string_builder(void)
 {
     DESCRIBE("String Builder tests");
+
+    TEST("Creates string builder")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        isize capacity = 256;
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, &arena, capacity);
+
+        rwlj_testing_expect(sb.buf != NULL);
+        rwlj_testing_expect_value(sb.len, 0);
+        rwlj_testing_expect_value(sb.capacity, capacity);
+    }
+
+    TEST("Writes i64")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, &arena, 256);
+
+        rwljString s = rwlj_string_builder_write_i64(&sb, -123456);
+        rwljString expected = STRING("-123456");
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+    TEST("Writes u64")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, &arena, 256);
+
+        rwljString s = rwlj_string_builder_write_u64(&sb, 123456, 'u');
+        rwljString expected = STRING("123456");
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+    TEST("Writes f64")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, &arena, 256);
+
+        rwljString expected = STRING("3.14159");
+        rwljString s =
+            rwlj_string_builder_write_f64(&sb, 3.14159, 'f', expected.len - 2);
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+    TEST("Writes string")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, &arena, 256);
+
+        rwljString expected = STRING("Hello, World!\n");
+        rwljString s = rwlj_string_builder_write_string(&sb, expected);
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+#define TEST_STRING                                                            \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+    TEST("Doesnt' write past buffer")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString longer_s = STRING(TEST_STRING TEST_STRING);
+        rwljString expected = STRING(TEST_STRING);
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, &arena, expected.len);
+
+        rwljString s = rwlj_string_builder_write_string(&sb, longer_s);
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
 }
 
 // clang-format off
@@ -1606,8 +1716,8 @@ rwljTest_Proc test_arr[] = {
 int
 main(void)
 {
-    for (isize i = 0; i < rwlj_size_of_array(test_arr); i += 1) {
+    for (isize i = 0; i < rwlj_count_of(test_arr); i += 1) {
         (test_arr[i])();
-        rwlj_printfln("");
+        rwlj_println(STRING(""));
     }
 }
