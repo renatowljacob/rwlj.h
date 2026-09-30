@@ -1681,7 +1681,6 @@ test_string_builder(void)
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
     TEST("Doesnt' write past buffer")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
@@ -1699,6 +1698,52 @@ test_string_builder(void)
 
         rwlj_testing_expect_value(s.len, expected.len);
         rwlj_testing_expect_value_string(s, expected);
+    }
+#undef TEST_STRING
+
+    TEST("Writes multiple strings")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, &arena, 300);
+
+        rwljString expected1 = STRING("string 1.");
+        rwljString expected2 = STRING("string 2..");
+        rwljString expected3 = STRING("string 3...");
+
+        rwljString expected_arr[3] = { expected1, expected2, expected3 };
+        rwljSlice_String expected_slice = rwlj_slice_from_array(expected_arr);
+
+        rwljString arr[30] = { 0 };
+        rwljSlice_String slice = rwlj_slice_from_array(arr);
+
+        for (isize i = 0; i < slice.len; i += 1) {
+            rwlj_slice_set(
+                &slice,
+                i,
+                rwlj_string_builder_write_string(
+                    &sb, expected_slice.data[i % 3]
+                )
+            );
+        }
+
+        rwlj_testing_expect_value_string(
+            rwlj_string_builder_write_string(
+                &sb, STRING("This shouldn't work")
+            ),
+            STRING("")
+        );
+        rwlj_testing_expect_value(sb.len, sb.capacity);
+
+        for (isize i = 0; i < slice.len; i += 1) {
+            rwlj_testing_expect_value_string(
+                slice.data[i], expected_slice.data[i % 3]
+            );
+        }
     }
 }
 

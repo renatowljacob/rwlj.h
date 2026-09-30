@@ -388,7 +388,7 @@ enum rwljArray_Kind {
 typedef isize rwljArray_Kind;
 
 #define GENERIC_ARRAY(T, name)                                                 \
-    typedef struct rwlj_concat(rwljArray, name) {                              \
+    typedef struct rwlj_concat_(rwljArray, name) {                             \
         T *data;                                                               \
         isize len;                                                             \
         isize capacity;                                                        \
@@ -627,6 +627,8 @@ typedef struct rwljString {
     char *data;
     isize len;
 } rwljString;
+
+GENERIC_ARRAY(rwljString, String);
 
 #define STRING(string) cast(rwljString){ string, rwlj_size_of(string) - 1 }
 
