@@ -62,7 +62,7 @@
  */
 
 #if defined(__clang__) || defined(__GNUC__)
-#define RWLJ_PRINTF_ARGS(num) __attribute__((format(printf, num, (num + 1))))
+#define RWLJ_PRINTF_ARGS(num) __attribute__((format(printf, num, ((num) + 1))))
 #endif
 
 #define global     static
@@ -153,42 +153,7 @@ typedef double f64;
 #define rwlj_no_op()     ((void)0)
 #define rwlj_unused(var) ((void)var)
 
-#define __rwlj_assert(cond)                                                    \
-    do {                                                                       \
-        if (cond) {                                                            \
-            break;                                                             \
-        }                                                                      \
-                                                                               \
-        rwlj_printfln(                                                         \
-            "Assertion failure at %s:%d:%s()",                                 \
-            RWLJ_FILE,                                                         \
-            RWLJ_LINE,                                                         \
-            RWLJ_FUNCTION                                                      \
-        );                                                                     \
-    } while (false)
-
-#ifdef DEBUG
-#define rwlj_debug_print(...) rwlj_println(__VA_ARGS__)
-
-#define rwlj_debug_printf(...) rwlj_printfln(__VA_ARGS__)
-
-#define rwlj_assert(cond)                                                      \
-    do {                                                                       \
-        __rwlj_assert(cond);                                                   \
-        RWLJ_TRAP();                                                           \
-    } while (false)
-
-#define rwlj_assert_msg(cond, ...)                                             \
-    do {                                                                       \
-        __rwlj_assert(cond);                                                   \
-        rwlj_printfln(__VA_ARGS__);                                            \
-        RWLJ_TRAP();                                                           \
-    } while (false)
-
-#define rwlj_assert_fail(...) rwlj_assert_msg(false, __VA_ARGS__)
-
-#define rwlj_not_implemented() rwlj_assert_fail("NOT IMPLEMENTED")
-#else
+#ifdef RWLJ_DISABLE_ASSERT
 #define rwlj_debug_print(...) rwlj_no_op()
 
 #define rwlj_debug_printf(...) rwlj_no_op()
@@ -200,6 +165,42 @@ typedef double f64;
 #define rwlj_assert_fail(...) rwlj_no_op()
 
 #define rwlj_not_implemented() rwlj_no_op()
+#else
+#define rwlj_debug_print(...) rwlj_eprintln(__VA_ARGS__)
+
+#define rwlj_debug_printf(...) rwlj_eprintfln(__VA_ARGS__)
+
+#define rwlj_assert(cond)                                                      \
+    do {                                                                       \
+        if (cond) {                                                            \
+            break;                                                             \
+        }                                                                      \
+                                                                               \
+        rwlj_debug_printf(                                                     \
+            "Assertion failure at %s:%d:%s()",                                 \
+            RWLJ_FILE,                                                         \
+            RWLJ_LINE,                                                         \
+            RWLJ_FUNCTION                                                      \
+        );                                                                     \
+        RWLJ_TRAP();                                                           \
+    } while (false)
+
+#define rwlj_assert_msg(cond, ...)                                             \
+    do {                                                                       \
+        if (cond) {                                                            \
+            break;                                                             \
+        }                                                                      \
+                                                                               \
+        rwlj_debug_printf(__VA_ARGS__);                                        \
+        RWLJ_TRAP();                                                           \
+    } while (false)
+
+#define rwlj_assert_fail(...) rwlj_assert_msg(false, __VA_ARGS__)
+
+#define rwlj_not_implemented()                                                 \
+    rwlj_assert_fail(                                                          \
+        "NOT IMPLEMENTED: %s:%d:%s()", RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION     \
+    )
 #endif // DEBUG
 
 #define RWLJ_LINE     __LINE__
@@ -249,15 +250,15 @@ typedef double f64;
 #define rwlj_min(x, y)          (x < y ? x : y)
 #define rwlj_clamp(x, min, max) (rwlj_max(rwlj_min(x, max), min))
 
-#define rwlj_align_pow2(x, align) ((x + align - 1) & (~(align - 1)))
-#define rwlj_is_pow2(x)           ((x & (x - 1)) == 0)
+#define rwlj_align_pow2(x, align) (((x) + (align) - 1) & (~((align) - 1)))
+#define rwlj_is_pow2(x)           (((x) & ((x) - 1)) == 0)
 
 #define rwlj_is_space(c)                                                       \
     (c == ' ' || c == '\f' || c == '\n' || c == '\r' || c == '\t' || c == '\v')
 #define rwlj_is_upper(c)        (c >= 'A' && c <= 'Z')
 #define rwlj_is_lower(c)        (c >= 'a' && c <= 'z')
-#define rwlj_to_upper(c)        (rwlj_is_lower(c) ? c - 32 : c)
-#define rwlj_to_lower(c)        (rwlj_is_upper(c) ? c + 32 : c)
+#define rwlj_to_upper(c)        (rwlj_is_lower(c) ? (c) - 32 : c)
+#define rwlj_to_lower(c)        (rwlj_is_upper(c) ? (c) + 32 : c)
 #define rwlj_is_alpha(c)        (rwlj_is_upper(c) || rwlj_is_lower(c))
 #define rwlj_is_digit(c)        (c >= '0' && c <= '9')
 #define rwlj_is_alphanumeric(c) (rwlj_is_alpha(c) || rwlj_is_digit(c))
@@ -282,9 +283,10 @@ void *rwlj_memory_swap(void *a, void *b, usize size);
 #define rwlj_abs(x) (x >= 0 ? x : -(x))
 
 #define rwlj_truncate(x) (cast(i64) x)
-#define rwlj_floor(x)    (rwlj_truncate(x > 0.0f ? x : x - 1.0f))
-#define rwlj_ceil(x)     (rwlj_truncate(x < 0.0f ? x : x + 1.0f))
-#define rwlj_round(x) (x >= 0.0f ? rwlj_ceil(x - 0.5f) : rwlj_floor(x + 0.5f))
+#define rwlj_floor(x)    (rwlj_truncate(x > 0.0f ? x : (x) - 1.0f))
+#define rwlj_ceil(x)     (rwlj_truncate(x < 0.0f ? x : (x) + 1.0f))
+#define rwlj_round(x)                                                          \
+    (x >= 0.0f ? rwlj_ceil((x) - 0.5f) : rwlj_floor((x) + 0.5f))
 
 #define RWLJ_F16_SHIFT (16 - 6)
 #define RWLJ_F16_MASK  0x1fll
@@ -425,7 +427,8 @@ GENERIC_ARRAY(b64, B64);
 GENERIC_ARRAY(bsize, Bsize);
 GENERIC_ARRAY(void, Void);
 
-#define rwlj_slice(ptr, start, end)  { &(ptr)[start], rwlj_max(end - start, 0) }
+#define rwlj_slice(ptr, start, end)                                            \
+    { &(ptr)[start], rwlj_max((end) - (start), 0) }
 #define rwlj_slice_from_array(array) rwlj_slice(array, 0, rwlj_count_of(array))
 #define rwlj_slice_from_buf(buf)     rwlj_slice_from_array(buf)
 
@@ -433,9 +436,13 @@ GENERIC_ARRAY(void, Void);
 
 #define rwlj_slice_get(slice, index)                                           \
     (index >= 0 && index < (slice)->len ? (slice)->data[index] : 0)
+#define rwlj_slice_get_struct(item_T, slice, index)                            \
+    (index >= 0 && index < (slice)->len ? (slice)->data[index] : (item_T){ 0 })
+
 #define rwlj_slice_set(slice, index, value)                                    \
-    (index >= 0 && index < (slice)->len ? ((slice)->data[index] = value, true) \
-                                        : false)
+    (index >= 0 && index < (slice)->len                                        \
+         ? ((slice)->data[index] = (value), true)                              \
+         : false)
 
 #define rwlj_slice_reverse(slice, item_T)                                      \
     do {                                                                       \
@@ -456,7 +463,7 @@ GENERIC_ARRAY(void, Void);
         );                                                                     \
     } while (false)
 
-#define RWLJ_GROW_FORMULA(capacity) (8 + capacity * 2)
+#define RWLJ_GROW_FORMULA(capacity) (8 + (capacity) * 2)
 
 #define rwlj_array_init_reserve_with_kind(array, capacity_, kind_, arena_)     \
     do {                                                                       \
@@ -477,10 +484,7 @@ GENERIC_ARRAY(void, Void);
 
 #define rwlj_array_init_dynamic_reserve(array, capacity, arena)                \
     rwlj_array_init_reserve_with_kind(                                         \
-        array,                                                                 \
-        (capacity > RWLJ_GROW_FORMULA(0) ? capacity : RWLJ_GROW_FORMULA(0)),   \
-        RWLJ_ARRAY_GROWING,                                                    \
-        arena                                                                  \
+        array, capacity, RWLJ_ARRAY_GROWING, arena                             \
     )
 
 #define rwlj_array_init_fixed(array, fixed_array)                              \
@@ -493,7 +497,10 @@ GENERIC_ARRAY(void, Void);
         (array)->data = (fixed_array);                                         \
     } while (false)
 
-#define rwlj_array_get(array, index)        rwlj_slice_get(array, index)
+#define rwlj_array_get(array, index) rwlj_slice_get(array, index)
+#define rwlj_array_get_struct(item_T, array, index)                            \
+    rwlj_slice_get_struct(item_T, array, index)
+
 #define rwlj_array_set(array, index, value) rwlj_slice_set(array, index, value)
 
 bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
@@ -509,7 +516,7 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
         array, new_capacity > (array)->capacity ? new_capacity : 0             \
     )
 
-#define rwlj_array_trim(array) rwlj_array_resize(array, (array)->len)
+#define rwlj_array_shrink(array) rwlj_array_resize(array, (array)->len)
 
 // Abusing short circuit to resize array (while also being an expression,
 // that's the important part)
@@ -531,7 +538,7 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
              ((array)->kind == RWLJ_ARRAY_FIXED &&                             \
               (array)->len < (array)->capacity)                                \
          ? (rwlj_memory_move(                                                  \
-                &(array)->data[index + 1],                                     \
+                &(array)->data[(index) + 1],                                   \
                 &(array)->data[index],                                         \
                 (cast(usize)(array)->len * (array)->item_size)                 \
             ),                                                                 \
@@ -564,11 +571,11 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
         }                                                                      \
                                                                                \
         if (index < (array)->len && index >= 0 && (array)->len > 0) {          \
-            (array)->data[index] = (array)->data[index + 1];                   \
+            (array)->data[index] = (array)->data[(index) + 1];                 \
             rwlj_memory_move(                                                  \
                 &(array)->data[index],                                         \
-                &(array)->data[index + 1],                                     \
-                cast(usize)((array)->len - index) * (array)->item_size         \
+                &(array)->data[(index) + 1],                                   \
+                cast(usize)((array)->len - (index)) * (array)->item_size       \
                                                                                \
             );                                                                 \
             (array)->len -= 1;                                                 \
@@ -603,7 +610,7 @@ void rwlj_insertion_sort(
 typedef long rwljDuration;
 typedef long rwljTime;
 
-#define RWLJ_TIME_NANOSECOND  1ll
+#define RWLJ_TIME_NANOSECOND  (1ll)
 #define RWLJ_TIME_MICROSECOND (1ll * 1000ll)
 #define RWLJ_TIME_MILLISECOND (1000ll * 1000ll)
 #define RWLJ_TIME_SECOND      (1000000ll * 1000ll)
@@ -635,23 +642,65 @@ GENERIC_ARRAY(rwljString, String);
 #define rwlj_string(ptr, start, end)                                           \
     cast(rwljString)                                                           \
     {                                                                          \
-        cast(char *) & (ptr)[start], rwlj_max(end - start, 0)                  \
+        cast(char *) & (ptr)[start], rwlj_max((end) - (start), 0)              \
     }
 
 #define rwlj_string_from_slice(slice)                                          \
     rwlj_string((slice)->data, 0, (slice)->len)
+
+// rwljString procedures
+isize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
+#define rwlj_string_compare(a, b)             __rwlj_string_compare(a, b, true)
+#define rwlj_string_compare_insensitive(a, b) __rwlj_string_compare(a, b, false)
+
+bool __rwlj_string_are_equal(rwljString a, rwljString b, bool sensitive);
+#define rwlj_string_are_equal(a, b) __rwlj_string_are_equal(a, b, true)
+#define rwlj_string_are_equal_insensitive(a, b)                                \
+    __rwlj_string_are_equal(a, b, false)
+
+bool __rwlj_string_contains(rwljString s, rwljString substr, bool sensitive);
+#define rwlj_string_contains(s, substr) __rwlj_string_contains(s, substr, true)
+#define rwlj_string_contains_insensitive(s, substr)                            \
+    __rwlj_string_contains(s, substr, false)
+
+isize __rwlj_string_index(rwljString s, rwljString substr, bool sensitive);
+#define rwlj_string_index(s, substr) __rwlj_string_index(s, substr, true)
+#define rwlj_string_index_insensitive(s, substr)                               \
+    __rwlj_string_index(s, substr, false)
+
+isize __rwlj_string_count(rwljString s, rwljString substr, bool sensitive);
+#define rwlj_string_count(s, substr) __rwlj_string_count(s, substr, true)
+#define rwlj_string_count_insensitive(s, substr)                               \
+    __rwlj_string_count(s, substr, false)
+
+rwljSlice_String __rwlj_string_split(
+    rwljString s,
+    rwljString sep,
+    rwljArena *arena,
+    bool sensitive
+);
+#define rwlj_string_split(s, substr, arena)                                    \
+    __rwlj_string_split(s, substr, arena, true)
+#define rwlj_string_split_insensitive(s, substr, arena)                        \
+    __rwlj_string_split(s, substr, arena, false)
+
+rwljString rwlj_string_clone(rwljString s, rwljArena *arena);
+rwljString
+rwlj_string_concatenate(rwljString a, rwljString b, rwljArena *arena);
+rwljString rwlj_string_reverse(rwljString s, rwljArena *arena);
+
+// C string procedures
+isize rwlj_string_cstrlen(const char *string, isize max_len);
+
+// Formatting procudures
+
+// TODO: Implement time formatting
 
 #define rwlj_string_from_fmt(slice, ...)                                       \
     cast(rwljString)                                                           \
     {                                                                          \
         cast(char *)(slice)->data, rwlj_bprintf(*(slice), __VA_ARGS__)         \
     }
-
-isize rwlj_string_compare(rwljString a, rwljString b);
-bool rwlj_string_are_equal(rwljString a, rwljString b);
-rwljString rwlj_string_clone(rwljString s, rwljArena *arena);
-
-isize rwlj_string_cstrlen(const char *string, isize max_len);
 
 isize rwlj_write_i64(rwljSlice_U8 buf, i64 number);
 isize rwlj_write_u64(rwljSlice_U8 buf, u64 number, u8 fmt);
@@ -1092,7 +1141,7 @@ __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity)
     rwlj_assert(array->data != NULL);
 
     array->capacity = array_new_capacity;
-    if (array->data != curr_data) {
+    if (curr_data != NULL && array->data != curr_data) {
         rwlj_memory_move(
             array->data, curr_data, cast(usize) array->len * array->item_size
         );
@@ -1184,12 +1233,32 @@ rwlj_time_sleep(rwljDuration time)
  *  Strings
  */
 
+#define RWLJ_STRING_COMPARE_SENTINEL cast(isize) rwlj_bit(8)
 isize
-rwlj_string_compare(rwljString a, rwljString b)
+__rwlj_string_compare(rwljString a, rwljString b, bool sensitive)
 {
+    if (a.len <= 0 || b.len <= 0) {
+        isize ret = 0;
+        if (a.len <= 0) {
+            ret += RWLJ_STRING_COMPARE_SENTINEL;
+        }
+        if (b.len <= 0) {
+            ret -= RWLJ_STRING_COMPARE_SENTINEL;
+        }
+        return ret;
+    }
+
+    if (sensitive) {
+        return rwlj_memory_compare(
+            a.data, b.data, cast(usize) rwlj_min(a.len, b.len)
+        );
+    }
+
     for (isize i = 0; i < a.len && i < b.len; i += 1) {
-        if (a.data[i] != b.data[i]) {
-            return a.data[i] - b.data[i];
+        char x = rwlj_to_lower(a.data[i]);
+        char y = rwlj_to_lower(b.data[i]);
+        if (x != y) {
+            return x - y;
         }
     }
 
@@ -1197,13 +1266,112 @@ rwlj_string_compare(rwljString a, rwljString b)
 }
 
 bool
-rwlj_string_are_equal(rwljString a, rwljString b)
+__rwlj_string_are_equal(rwljString a, rwljString b, bool sensitive)
 {
-    if (a.len != b.len || rwlj_string_compare(a, b)) {
+    if (a.len != b.len || (__rwlj_string_compare(a, b, sensitive))) {
         return false;
     }
 
     return true;
+}
+
+bool
+__rwlj_string_contains(rwljString s, rwljString substr, bool sensitive)
+{
+    if (substr.len == 0) {
+        return true;
+    }
+
+    for (isize i = 0; i < s.len; i += 1) {
+        if (!__rwlj_string_compare(
+                rwlj_string(s.data, i, s.len), substr, sensitive
+            )) {
+            return true;
+        }
+    }
+    return false;
+}
+
+isize
+__rwlj_string_index(rwljString s, rwljString substr, bool sensitive)
+{
+    if (substr.len == 0) {
+        return 0;
+    }
+
+    for (isize i = 0; i < s.len; i += 1) {
+        if (!__rwlj_string_compare(
+                rwlj_string(s.data, i, s.len), substr, sensitive
+            )) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+isize
+__rwlj_string_count(rwljString s, rwljString substr, bool sensitive)
+{
+    if (substr.len == 0) {
+        return s.len + 1;
+    }
+
+    isize count = 0;
+    for (isize i = 0; i < s.len; i += 1) {
+        if (!__rwlj_string_compare(
+                rwlj_string(s.data, i, s.len), substr, sensitive
+            )) {
+            count += 1;
+            i += (substr.len - 1);
+        }
+    }
+
+    return count;
+}
+
+rwljSlice_String
+__rwlj_string_split(
+    rwljString s,
+    rwljString separator,
+    rwljArena *arena,
+    bool sensitive
+)
+{
+    rwljArray_String parts = { 0 };
+
+    if (s.len == 0 && s.data[0] == '\0') {
+        return (rwljSlice_String){ parts.data, parts.len };
+    }
+
+    if (separator.len == 0 && separator.data[0] == '\0') {
+        rwlj_array_init_dynamic_reserve(&parts, s.len, arena);
+        for (isize i = 0; i < s.len; i += 1) {
+            rwlj_array_append(&parts, rwlj_string(s.data, i, i + 1));
+        }
+
+        return (rwljSlice_String){ parts.data, parts.len };
+    }
+
+    isize n = __rwlj_string_count(s, separator, sensitive) + 1;
+    rwlj_array_init_dynamic_reserve(&parts, n, arena);
+    if (n == 1) {
+        rwlj_array_append(&parts, s);
+        return (rwljSlice_String){ parts.data, parts.len };
+    }
+
+    isize index = 0;
+    isize start = 0;
+    for (isize i = 0; i < n; i += 1) {
+        isize res = __rwlj_string_index(
+            rwlj_string(s.data, index, s.len), separator, sensitive
+        );
+        index = res == -1 ? s.len : index + res;
+        rwljString part = rwlj_string(s.data, start, index);
+        rwlj_array_append(&parts, part);
+        start = index = rwlj_min(index + separator.len, s.len);
+    }
+
+    return (rwljSlice_String){ parts.data, parts.len };
 }
 
 rwljString
@@ -1218,6 +1386,34 @@ rwlj_string_clone(rwljString s, rwljArena *arena)
     rwlj_memory_copy(cloned.data, s.data, cast(usize) s.len);
 
     return cloned;
+}
+
+rwljString
+rwlj_string_concatenate(rwljString a, rwljString b, rwljArena *arena)
+{
+    isize buf_len = a.len + b.len;
+    u8 *buf = rwlj_arena_alloc(arena, cast(usize)(buf_len));
+    if (buf == NULL) {
+        return STRING("");
+    }
+
+    isize i = 0;
+    for (; i < a.len; i += 1) {
+        buf[i] = cast(u8) a.data[i];
+    }
+    for (isize j = 0; j < b.len && i < buf_len; j += 1, i += 1) {
+        buf[i] = cast(u8) b.data[j];
+    }
+
+    return rwlj_string(buf, 0, buf_len);
+}
+
+rwljString
+rwlj_string_reverse(rwljString s, rwljArena *arena)
+{
+    rwlj_unused(s);
+    rwlj_unused(arena);
+    rwlj_not_implemented();
 }
 
 isize
@@ -1287,7 +1483,7 @@ rwlj_write_u64(rwljSlice_U8 buf, u64 number, u8 fmt)
         base = 16;
         break;
     default:
-        rwlj_assert_fail("Base not implemented for unsigned integers");
+        rwlj_not_implemented();
     }
     isize start = bytes_written;
 
@@ -1460,34 +1656,35 @@ u64 const __rwlj_powten[20] = { 1,
         i64 bt = transmute(xh, f64, i64);                                      \
         bt &= cast(i64)((~0llu) << 27);                                        \
         f64 ahi = transmute(bt, i64, f64);                                     \
-        f64 alo = xh - ahi;                                                    \
+        f64 alo = (xh) - ahi;                                                  \
         bt = transmute(yh, f64, i64);                                          \
         bt &= cast(i64)((~0llu) << 27);                                        \
         f64 bhi = transmute(bt, i64, f64);                                     \
-        f64 blo = yh - bhi;                                                    \
-        ol = ((ahi * bhi - oh) + ahi * blo + alo * bhi) + alo * blo;           \
+        f64 blo = (yh) - bhi;                                                  \
+        ol = ((ahi * bhi - (oh)) + ahi * blo + alo * bhi) + alo * blo;         \
     }
 
 #define __rwlj_ddtoS64(ob, xh, xl)                                             \
     {                                                                          \
         ob = cast(i64) xh;                                                     \
         f64 vh = cast(f64) ob;                                                 \
-        f64 ahi = (xh - vh);                                                   \
-        f64 t = (ahi - xh);                                                    \
-        f64 alo = (xh - (ahi - t)) - (vh + t);                                 \
-        ob += cast(i64)(ahi + alo + xl);                                       \
+        f64 ahi = ((xh) - vh);                                                 \
+        f64 t = (ahi - (xh));                                                  \
+        f64 alo = ((xh) - (ahi - t)) - (vh + t);                               \
+        ob += cast(i64)(ahi + alo + (xl));                                     \
     }
 
 #define __rwlj_ddrenorm(oh, ol)                                                \
     {                                                                          \
-        f64 s = oh + ol;                                                       \
-        ol = ol - (s - oh);                                                    \
+        f64 s = (oh) + (ol);                                                   \
+        ol = (ol) - (s - (oh));                                                \
         oh = s;                                                                \
     }
 
-#define __rwlj_ddmultlo(oh, ol, xh, xl, yh, yl) ol = ol + (xh * yl + xl * yh);
+#define __rwlj_ddmultlo(oh, ol, xh, xl, yh, yl)                                \
+    ol = (ol) + ((xh) * (yl) + (xl) * (yh));
 
-#define __rwlj_ddmultlos(oh, ol, xh, yl) ol = ol + (xh * yl);
+#define __rwlj_ddmultlos(oh, ol, xh, yl) ol = (ol) + ((xh) * (yl));
 
 internal void
 __rwlj_raise_to_power10(
@@ -2860,7 +3057,6 @@ rwlj_bprintfln(rwljSlice_U8 buf, char const *fmt, ...)
     return len;
 }
 
-// TODO: make this thread-safe
 internal isize
 __rwlj_fprintf_va(
     rwljFile_Descriptor fd,
@@ -2869,7 +3065,7 @@ __rwlj_fprintf_va(
     va_list ap
 )
 {
-    persistent u8 buf[4096] = { 0 };
+    u8 buf[4096] = { 0 };
     rwljSlice_U8 slice = rwlj_slice_from_buf(buf);
     isize len = __rwlj_bprintf_va(slice, has_new_line, fmt, ap);
 
@@ -3013,6 +3209,8 @@ rwlj_eprintln(rwljString s)
     return rwlj_fprintln(RWLJ_STDERR, s);
 }
 
+// TODO: Give more init options for String_Builder (from buffer, arena or
+// dynamic array)
 void
 rwlj_string_builder_init(
     rwljString_Builder *sb,
@@ -3034,7 +3232,7 @@ rwlj_string_builder_write_i64(rwljString_Builder *sb, i64 number)
         number
     );
 
-    return (rwljString){ &sb->buf[start], sb->len - start };
+    return rwlj_string(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3047,7 +3245,7 @@ rwlj_string_builder_write_u64(rwljString_Builder *sb, u64 number, u8 fmt)
         fmt
     );
 
-    return (rwljString){ &sb->buf[start], sb->len - start };
+    return rwlj_string(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3066,7 +3264,7 @@ rwlj_string_builder_write_f64(
         precision
     );
 
-    return (rwljString){ &sb->buf[start], sb->len - start };
+    return rwlj_string(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3078,13 +3276,13 @@ rwlj_string_builder_write_string(rwljString_Builder *sb, rwljString s)
         s
     );
 
-    return (rwljString){ &sb->buf[start], sb->len - start };
+    return rwlj_string(sb->buf, start, sb->len);
 }
 
 rwljString
 rwlj_string_builder_to_string(rwljString_Builder *sb)
 {
-    return (rwljString){ sb->buf, sb->len };
+    return rwlj_string(sb->buf, 0, sb->len);
 }
 
 rwljString
@@ -3115,7 +3313,7 @@ rwlj_sbprintf(rwljString_Builder *sb, char const *fmt, ...)
     );
     va_end(ap);
 
-    return cast(rwljString) rwlj_slice(sb->buf, start, sb->len);
+    return rwlj_string(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3133,7 +3331,7 @@ rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...)
     );
     va_end(ap);
 
-    return cast(rwljString) rwlj_slice(sb->buf, start, sb->len);
+    return rwlj_string(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3142,7 +3340,7 @@ rwlj_sbprint(rwljString_Builder *sb, rwljString s)
     rwljSlice_U8 buf = rwlj_slice(cast(u8 *) sb->buf, sb->len, sb->capacity);
     isize bytes_written = rwlj_bprint(buf, s);
 
-    return cast(rwljString) rwlj_slice(sb->buf, 0, bytes_written);
+    return rwlj_string(sb->buf, 0, bytes_written);
 }
 
 rwljString
@@ -3155,7 +3353,7 @@ rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
         bytes_written += 1;
     }
 
-    return cast(rwljString) rwlj_slice(sb->buf, sb->len, bytes_written);
+    return rwlj_string(sb->buf, sb->len, bytes_written);
 }
 
 /*
