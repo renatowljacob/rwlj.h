@@ -3209,7 +3209,7 @@ rwlj_eprintln(rwljString s)
     return rwlj_fprintln(RWLJ_STDERR, s);
 }
 
-// TODO: Give more init options for String_Builder (from buffer, arena or
+// TODO: Give more init options to String_Builder (from buffer, arena or
 // dynamic array)
 void
 rwlj_string_builder_init(
