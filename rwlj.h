@@ -584,6 +584,8 @@ bool __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity);
 
 /* hashmaps */
 
+// TODO: Make a hashmap
+
 /*
  *  Algorithms
  */
@@ -691,7 +693,9 @@ rwlj_string_concatenate(rwljString a, rwljString b, rwljArena *arena);
 rwljString rwlj_string_reverse(rwljString s, rwljArena *arena);
 
 // C string procedures
-isize rwlj_string_cstrlen(const char *string, isize max_len);
+
+char *rwlj_cstring_from_string(rwljString s, rwljArena *arena);
+isize rwlj_cstring_len(const char *string, isize max_len);
 
 // Formatting procudures
 
@@ -1417,8 +1421,22 @@ rwlj_string_reverse(rwljString s, rwljArena *arena)
     rwlj_not_implemented();
 }
 
+// C string procedures
+
+char *
+rwlj_cstring_from_string(rwljString s, rwljArena *arena)
+{
+    usize buf_size = cast(usize) s.len + 1;
+
+    // NOTE: Alloc already memzeroes the buffer
+    u8 *buf = rwlj_arena_alloc(arena, buf_size);
+    rwlj_memory_copy(buf, s.data, buf_size - 1);
+
+    return cast(char *) buf;
+}
+
 isize
-rwlj_string_cstrlen(char const *string, isize max_len)
+rwlj_cstring_len(char const *string, isize max_len)
 {
     char *s = cast(char *) string;
     isize len = 0;

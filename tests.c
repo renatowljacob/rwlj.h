@@ -1051,6 +1051,31 @@ test_formatting(void)
         }
     }
 
+    TEST("Formats cstring")
+    {
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+#define TEST_STRING ""
+            {
+                rwljString s =
+                    rwlj_string_from_fmt(&buf_slice, "|%s|", TEST_STRING);
+                rwljString expected = STRING("||");
+                rwlj_testing_expect_value_string(s, expected);
+            }
+#undef TEST_STRING
+#define TEST_STRING "Hello, World!"
+            {
+                rwljString s =
+                    rwlj_string_from_fmt(&buf_slice, "|%s|", TEST_STRING);
+                rwljString expected = STRING("|Hello, World!|");
+                rwlj_testing_expect_value_string(s, expected);
+            }
+#undef TEST_STRING
+        }
+    }
+
     TEST("Prints sign")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
