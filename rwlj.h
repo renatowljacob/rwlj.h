@@ -165,7 +165,7 @@ typedef double f64;
 #define rwlj_assert_fail(...) rwlj_no_op()
 
 #define rwlj_not_implemented() rwlj_no_op()
-#else
+#else // RWLJ_DISABLE_ASSERT
 #define rwlj_debug_print(...) rwlj_eprintln(__VA_ARGS__)
 
 #define rwlj_debug_printf(...) rwlj_eprintfln(__VA_ARGS__)
@@ -201,7 +201,7 @@ typedef double f64;
     rwlj_assert_fail(                                                          \
         "NOT IMPLEMENTED: %s:%d:%s()", RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION     \
     )
-#endif // DEBUG
+#endif // RWLJ_DISABLE_ASSERT
 
 #define RWLJ_LINE     __LINE__
 #define RWLJ_FUNCTION __func__
@@ -748,8 +748,8 @@ typedef struct rwljString_Builder {
 
 void rwlj_string_builder_init(
     rwljString_Builder *sb,
-    rwljArena *arena,
-    isize capacity
+    isize capacity,
+    rwljArena *arena
 );
 rwljString rwlj_string_builder_write_i64(rwljString_Builder *sb, i64 number);
 rwljString
@@ -1429,6 +1429,8 @@ rwlj_string_cstrlen(char const *string, isize max_len)
 
     return len;
 }
+
+// Formatting procudures
 
 isize
 rwlj_write_i64(rwljSlice_U8 buf, i64 number)
@@ -3214,8 +3216,8 @@ rwlj_eprintln(rwljString s)
 void
 rwlj_string_builder_init(
     rwljString_Builder *sb,
-    rwljArena *arena,
-    isize capacity
+    isize capacity,
+    rwljArena *arena
 )
 {
     sb->buf = rwlj_arena_alloc(arena, cast(usize) capacity);

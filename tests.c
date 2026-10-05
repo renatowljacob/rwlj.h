@@ -1573,7 +1573,7 @@ test_string_builder(void)
 
         isize capacity = 256;
         rwljString_Builder sb = { 0 };
-        rwlj_string_builder_init(&sb, &arena, capacity);
+        rwlj_string_builder_init(&sb, capacity, &arena);
 
         rwlj_testing_expect(sb.buf != NULL);
         rwlj_testing_expect_value(sb.len, 0);
@@ -1588,7 +1588,7 @@ test_string_builder(void)
         rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljString_Builder sb = { 0 };
-        rwlj_string_builder_init(&sb, &arena, 256);
+        rwlj_string_builder_init(&sb, 256, &arena);
 
         rwljString s = rwlj_string_builder_write_i64(&sb, -123456);
         rwljString expected = STRING("-123456");
@@ -1605,7 +1605,7 @@ test_string_builder(void)
         rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljString_Builder sb = { 0 };
-        rwlj_string_builder_init(&sb, &arena, 256);
+        rwlj_string_builder_init(&sb, 256, &arena);
 
         rwljString s = rwlj_string_builder_write_u64(&sb, 123456, 'u');
         rwljString expected = STRING("123456");
@@ -1622,7 +1622,7 @@ test_string_builder(void)
         rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljString_Builder sb = { 0 };
-        rwlj_string_builder_init(&sb, &arena, 256);
+        rwlj_string_builder_init(&sb, 256, &arena);
 
         rwljString expected = STRING("3.14159");
         rwljString s =
@@ -1640,7 +1640,7 @@ test_string_builder(void)
         rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljString_Builder sb = { 0 };
-        rwlj_string_builder_init(&sb, &arena, 256);
+        rwlj_string_builder_init(&sb, 256, &arena);
 
         rwljString expected = STRING("Hello, World!\n");
         rwljString s = rwlj_string_builder_write_string(&sb, expected);
@@ -1665,7 +1665,7 @@ test_string_builder(void)
         rwljString expected = STRING(TEST_STRING);
 
         rwljString_Builder sb = { 0 };
-        rwlj_string_builder_init(&sb, &arena, expected.len);
+        rwlj_string_builder_init(&sb, expected.len, &arena);
 
         rwljString s = rwlj_string_builder_write_string(&sb, longer_s);
 
@@ -1682,7 +1682,7 @@ test_string_builder(void)
         rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljString_Builder sb = { 0 };
-        rwlj_string_builder_init(&sb, &arena, 300);
+        rwlj_string_builder_init(&sb, 300, &arena);
 
         rwljString expected1 = STRING("string 1.");
         rwljString expected2 = STRING("string 2..");
