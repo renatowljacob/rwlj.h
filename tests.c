@@ -1,252 +1,335 @@
 #include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 
-#include "rwlj.h"
+#define STB_SPRINTF_IMPLEMENTATION
+#include "vendor/stb_sprintf.h"
+
 #define RWLJ_IMPLEMENTATION
+#include "rwlj.h"
+
+// The dumbest tests you'll ever gonna see
 
 typedef void (*rwljTest_Proc)(void);
 
 void
+test_math(void)
+{
+    DESCRIBE("Math procedures tests");
+
+    TEST("Identifies infinity")
+    {
+        rwlj_testing_expect(rwlj_is_inf(RWLJ_INFINITY));
+        rwlj_testing_expect(rwlj_is_inf(-RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_inf(0.0));
+        rwlj_testing_expect(!rwlj_is_inf(-0.0));
+        rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MAX));
+        rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MIN));
+        rwlj_testing_expect(!rwlj_is_inf(RWLJ_NAN));
+    }
+
+    TEST("Identifies NaNs")
+    {
+        rwlj_testing_expect(rwlj_is_nan(RWLJ_NAN));
+        rwlj_testing_expect(!rwlj_is_nan(RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_nan(-RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_nan(0.0));
+        rwlj_testing_expect(!rwlj_is_nan(-0.0));
+        rwlj_testing_expect(!rwlj_is_nan(RWLJ_F64_MAX));
+        rwlj_testing_expect(!rwlj_is_nan(RWLJ_F64_MIN));
+    }
+
+    f64 min_subnormal = 4.94065645841246544177e-324;
+    f64 max_subnormal = 2.22507385850720088902e-308;
+    TEST("Identifies subnormals")
+    {
+        rwlj_testing_expect(rwlj_is_subnormal(0.0));
+        rwlj_testing_expect(rwlj_is_subnormal(-0.0));
+        rwlj_testing_expect(rwlj_is_subnormal(min_subnormal));
+        rwlj_testing_expect(rwlj_is_subnormal(max_subnormal));
+        rwlj_testing_expect(rwlj_is_subnormal(-min_subnormal));
+        rwlj_testing_expect(rwlj_is_subnormal(-max_subnormal));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_NAN));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_subnormal(-RWLJ_INFINITY));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MAX));
+        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MIN));
+        rwlj_testing_expect(!rwlj_is_subnormal(3.14159265));
+    }
+
+    TEST("Classifies floats correctly")
+    {
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_NAN), RWLJ_FLOAT_CLASS_NAN
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(-RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(min_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(max_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(-min_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(-max_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_F64_MIN), RWLJ_FLOAT_CLASS_NORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(3.14159265), RWLJ_FLOAT_CLASS_NORMAL
+        );
+        rwlj_testing_expect_value(
+            rwlj_classify(RWLJ_F64_MAX), RWLJ_FLOAT_CLASS_NORMAL
+        );
+    }
+}
+
+void
 test_arena(void)
 {
-    DESCRIBE("Arena tests");
+    DESCRIBE("rwljArena tests");
 
-    IT("Sets growing arena")
+    TEST("Sets growing arena")
     {
         rwljArena arena = { 0 };
-        rwlj_arena_init_growing_size(&arena, rwlj_mb(8));
+        usize arena_total_size = rwlj_mb(8);
+        rwlj_arena_init_growing(&arena, arena_total_size);
 
         rwlj_testing_expect(arena.backing_buf != NULL);
         rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_GROWING);
-        rwlj_testing_expect_value(arena.total_size, rwlj_mb(8));
+        rwlj_testing_expect_value(arena.total_size, arena_total_size);
 
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Sets static arena")
+    TEST("Sets static arena")
     {
         rwljArena arena = { 0 };
-        rwlj_arena_init_static_size(&arena, rwlj_mb(1));
+        usize arena_total_size = rwlj_mb(1);
+        rwlj_arena_init_static(&arena, arena_total_size);
 
         rwlj_testing_expect(arena.backing_buf != NULL);
         rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_STATIC);
-        rwlj_testing_expect_value(arena.total_size, rwlj_mb(1));
+        rwlj_testing_expect_value(arena.total_size, arena_total_size);
 
         rwlj_arena_destroy(&arena);
     }
 
-    IT("Sets buffer arena")
+    TEST("Sets buffer arena")
     {
-        u8 buf[rwlj_kb(1)] = { 0 };
+#define ARENA_TOTAL_SIZE rwlj_mb(1)
+        u8 buf[ARENA_TOTAL_SIZE] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwlj_testing_expect(arena.backing_buf != NULL);
         rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_BUFFER);
-        rwlj_testing_expect_value(arena.total_size, rwlj_kb(1));
-
-        rwlj_arena_destroy(&arena);
+        rwlj_testing_expect_value(arena.total_size, ARENA_TOTAL_SIZE);
+#undef ARENA_TOTAL_SIZE
     }
 
-    IT("Allocates all memory with arena")
+    TEST("Allocates all memory")
     {
-        u8 buf[rwlj_kb(1)] = { 0 };
+        u8 buf[rwlj_mb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
-        u8 *mem = rwlj_arena_alloc(&arena, arena.total_size);
+        u8 *allocation = rwlj_arena_alloc(&arena, arena.total_size);
 
-        rwlj_testing_expect(mem != NULL);
+        rwlj_testing_expect(allocation != NULL);
         rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
-
-        rwlj_arena_destroy(&arena);
     }
 
-    IT("Allocates no memory with arena")
+    TEST("Allocates no memory")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
-        u8 *mem = rwlj_arena_alloc(&arena, 0);
+        u8 *allocation = rwlj_arena_alloc(&arena, 0);
 
-        rwlj_testing_expect(mem == NULL);
+        rwlj_testing_expect(allocation == NULL);
         rwlj_testing_expect_value(arena.allocated_size, 0);
-
-        rwlj_arena_destroy(&arena);
     }
 
-    IT("Makes arbitrary allocations with arena")
+    TEST("Arbitrarily allocates memory")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
-        isize allocations = 8;
-        isize allocation_size = rwlj_size_of_array(buf) / allocations;
-        for (isize i = 0; i < allocations; i += 1) {
-            u8 *mem = rwlj_arena_alloc(&arena, cast(usize) allocation_size);
+        usize allocation_num = 8;
+        usize total_allocation_size = rwlj_count_of(buf) / allocation_num;
+        for (usize i = 0; i < allocation_num * 2; i += 1) {
+            u8 *allocation = rwlj_arena_alloc(&arena, total_allocation_size);
+            usize iter_allocation_size = total_allocation_size * (i + 1);
 
-            rwlj_testing_expect(mem != NULL);
-            rwlj_testing_expect_value(
-                arena.allocated_size, cast(usize)(allocation_size * (i + 1))
-            );
+            if (i < allocation_num) {
+                rwlj_testing_expect(allocation != NULL);
+                rwlj_testing_expect_value(
+                    arena.allocated_size, iter_allocation_size
+                );
+            } else {
+                rwlj_testing_expect(allocation == NULL);
+                rwlj_testing_expect_value(
+                    arena.allocated_size, arena.total_size
+                );
+            }
+        }
+    }
+
+    TEST("Enlarges last arena allocation")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        usize allocation_size = arena.total_size / 4;
+        usize allocated_memory = 0;
+
+        u8 *allocation = NULL;
+        for (usize i = 0, allocation_num = 3; i < allocation_num; i += 1) {
+            allocation = rwlj_arena_alloc(&arena, allocation_size);
+            allocated_memory += allocation_size;
         }
 
-        rwlj_arena_destroy(&arena);
-    }
+        rwlj_testing_expect(allocation != NULL);
+        rwlj_testing_expect_value(arena.allocated_size, allocated_memory);
 
-    IT("Enlarges last arena allocation")
-    {
-        u8 buf[rwlj_kb(1)] = { 0 };
-        rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
-
-        usize allocation_size = arena.total_size / 4;
-
-        u8 *_mem1 = rwlj_arena_alloc(&arena, allocation_size);
-        rwlj_unused(_mem1);
-
-        u8 *_mem2 = rwlj_arena_alloc(&arena, allocation_size);
-        rwlj_unused(_mem2);
-
-        u8 *mem3 = rwlj_arena_alloc(&arena, allocation_size);
-
-        rwlj_testing_expect(mem3 != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, allocation_size * 3);
-
-        u8 *resized_mem = rwlj_arena_resize(
-            &arena, mem3, allocation_size, allocation_size * 2
+        u8 *resized_allocation = rwlj_arena_resize(
+            &arena, allocation, allocation_size, allocation_size * 2
         );
 
-        rwlj_testing_expect(resized_mem != NULL);
+        rwlj_testing_expect(resized_allocation != NULL);
         rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
-
-        rwlj_arena_destroy(&arena);
     }
 
-    IT("Shrinks last arena allocation")
+    TEST("Shrinks last arena allocation")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         usize allocation_size = arena.total_size / 4;
-        usize total_allocated = 0;
+        usize allocated_memory = 0;
 
-        u8 *_mem1 = rwlj_arena_alloc(&arena, allocation_size);
-        rwlj_unused(_mem1);
-        total_allocated += allocation_size;
+        u8 *allocation = NULL;
+        for (usize i = 0, allocation_num = 3; i < allocation_num; i += 1) {
+            allocation = rwlj_arena_alloc(&arena, allocation_size);
+            allocated_memory += allocation_size;
+        }
 
-        u8 *_mem2 = rwlj_arena_alloc(&arena, allocation_size);
-        rwlj_unused(_mem2);
-        total_allocated += allocation_size;
-
-        u8 *mem3 = rwlj_arena_alloc(&arena, allocation_size);
-        total_allocated += allocation_size;
-
-        rwlj_testing_expect(mem3 != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, total_allocated);
+        rwlj_testing_expect(allocation != NULL);
+        rwlj_testing_expect_value(arena.allocated_size, allocated_memory);
 
         u8 *resized_mem = rwlj_arena_resize(
-            &arena, mem3, allocation_size, allocation_size / 2
+            &arena, allocation, allocation_size, allocation_size / 2
         );
-        total_allocated -= (allocation_size / 2);
+        allocated_memory -= (allocation_size / 2);
 
         rwlj_testing_expect(resized_mem != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, total_allocated);
-
-        rwlj_arena_destroy(&arena);
+        rwlj_testing_expect_value(arena.allocated_size, allocated_memory);
     }
 }
 
 void
 test_slice(void)
 {
-    DESCRIBE("Slice tests");
+    DESCRIBE("rwljSlice tests");
 
-    IT("Doesn't get value before index 0 (out of bounds)")
+    // Continue refactoring from here
+    TEST("Doesn't get value before index 0 (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_get(&slice, -1));
     }
 
-    IT("Doesn't get value beyond last index (out of bounds)")
+    TEST("Doesn't get value beyond last index (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_get(&slice, slice.len));
     }
 
-    IT("Gets value at index 0")
+    TEST("Gets value at index 0")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_get(&slice, 0));
     }
 
-    IT("Gets value at last index")
+    TEST("Gets value at last index")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_get(&slice, slice.len - 1));
     }
 
-    IT("Doesn't set value before at index 0 (out of bounds)")
+    TEST("Doesn't set value before at index 0 (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_set(&slice, -1, 22));
     }
 
-    IT("Doesn't set value beyond last index (out of bounds)")
+    TEST("Doesn't set value beyond last index (out of bounds)")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(!rwlj_slice_set(&slice, slice.len, 22));
     }
 
-    IT("Sets value at index 0")
+    TEST("Sets value at index 0")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_set(&slice, 0, 22));
         rwlj_testing_expect_value(rwlj_slice_get(&slice, 0), 22);
     }
 
-    IT("Sets value at last index")
+    TEST("Sets value at last index")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_testing_expect(rwlj_slice_set(&slice, slice.len - 1, 22));
         rwlj_testing_expect_value(rwlj_slice_get(&slice, slice.len - 1), 22);
     }
 
-    IT("Reverses slice")
+    TEST("Reverses slice")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
@@ -254,9 +337,8 @@ test_slice(void)
         isize reversed_buf[] = {
             8, 7, 6, 5, 4, 3, 2, 1,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
-        rwljSlice_Isize reversed_slice = { reversed_buf,
-                                           rwlj_size_of_array(reversed_buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize reversed_slice = rwlj_slice_from_array(reversed_buf);
 
         rwlj_slice_reverse(&slice, isize);
         for (isize i = 0; i < slice.len; i += 1) {
@@ -264,12 +346,12 @@ test_slice(void)
         }
     }
 
-    IT("Clears slice")
+    TEST("Clears slice")
     {
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = { buf, rwlj_size_of_array(buf) };
+        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
 
         rwlj_slice_clear(&slice);
         for (isize i = 0; i < slice.len; i += 1) {
@@ -277,7 +359,7 @@ test_slice(void)
         }
     }
 
-    IT("Sorts slice")
+    TEST("Sorts slice")
     {
         // To be implemented
     }
@@ -286,14 +368,14 @@ test_slice(void)
 void
 test_array(void)
 {
-    DESCRIBE("Dynamic Array tests");
+    DESCRIBE("rwljArray tests");
 
-    IT("Creates dynamic array")
+    TEST("Creates dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
@@ -301,11 +383,9 @@ test_array(void)
         rwlj_testing_expect(array.data != NULL);
         rwlj_testing_expect_value(array.kind, RWLJ_ARRAY_GROWING);
         rwlj_testing_expect_value(array.capacity, RWLJ_GROW_FORMULA(0));
-
-        rwlj_arena_destroy(&arena);
     }
 
-    IT("Creates fixed array")
+    TEST("Creates fixed array")
     {
         isize backing_array[8] = { 0 };
         rwljArray_Isize array = { 0 };
@@ -313,17 +393,15 @@ test_array(void)
 
         rwlj_testing_expect(array.data != NULL);
         rwlj_testing_expect_value(array.kind, RWLJ_ARRAY_FIXED);
-        rwlj_testing_expect_value(
-            array.capacity, rwlj_size_of_array(backing_array)
-        );
+        rwlj_testing_expect_value(array.capacity, rwlj_count_of(backing_array));
     }
 
-    IT("Creates and reserves dynamic array")
+    TEST("Creates and reserves dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
@@ -332,121 +410,138 @@ test_array(void)
         rwlj_testing_expect(array.data != NULL);
         rwlj_testing_expect_value(array.kind, RWLJ_ARRAY_GROWING);
         rwlj_testing_expect_value(array.capacity, array_cap);
-
-        rwlj_arena_destroy(&arena);
     }
 
-    IT("Reserves at least 8 elements worth of memory")
+    TEST("Reserves at least grow_formula(N) elements")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array1 = { 0 };
+        rwljArray_Isize array2 = { 0 };
+        isize capacity1 = 0;
+        isize capacity2 = 7;
+        rwlj_array_init_dynamic_reserve(&array1, capacity1, &arena);
+        rwlj_array_init_dynamic_reserve(&array2, capacity2, &arena);
+
+        rwlj_testing_expect(array1.data == NULL);
+        rwlj_testing_expect_value(array1.kind, RWLJ_ARRAY_GROWING);
+        rwlj_testing_expect_value(array1.capacity, capacity1);
+
+        rwlj_testing_expect(array2.data != NULL);
+        rwlj_testing_expect_value(array2.kind, RWLJ_ARRAY_GROWING);
+        rwlj_testing_expect_value(array2.capacity, capacity2);
+    }
+
+    TEST("Appends and allocates memory for 0-length null array")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
-        rwlj_array_init_dynamic_reserve(&array, 0, &arena);
+        isize capacity = 0;
+        rwlj_array_init_dynamic_reserve(&array, capacity, &arena);
+
+        rwlj_testing_expect(array.data == NULL);
+        rwlj_testing_expect_value(array.kind, RWLJ_ARRAY_GROWING);
+        rwlj_testing_expect_value(array.capacity, capacity);
+
+        rwlj_array_append(&array, 1);
 
         rwlj_testing_expect(array.data != NULL);
-        rwlj_testing_expect_value(array.kind, RWLJ_ARRAY_GROWING);
-        rwlj_testing_expect_value(array.capacity, RWLJ_GROW_FORMULA(0));
-
-        rwlj_arena_destroy(&arena);
+        rwlj_testing_expect_value(array.capacity, RWLJ_GROW_FORMULA(capacity));
     }
 
-    IT("Grows dynamic array")
+    TEST("Grows dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
-        isize array_cap = 32;
-        rwlj_array_init_dynamic_reserve(&array, array_cap, &arena);
+        isize capacity = 0;
+        rwlj_array_init_dynamic_reserve(&array, capacity, &arena);
 
         rwlj_testing_expect(rwlj_array_grow(&array));
 
-        isize array_new_len = RWLJ_GROW_FORMULA(array_cap);
+        isize array_new_len = RWLJ_GROW_FORMULA(capacity);
         rwlj_testing_expect_value(array.capacity, array_new_len);
-
-        rwlj_arena_destroy(&arena);
     }
 
-    IT("Grows dynamic array up to arena's total allocated memory")
+    TEST("Grows dynamic array up to arena's total size")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
         rwlj_array_init_dynamic_reserve(&array, array_cap, &arena);
 
-        isize max_len = rwlj_size_of_array(buf) / rwlj_size_of(isize);
+        isize max_len = rwlj_count_of(buf) / rwlj_size_of(isize);
         rwlj_testing_expect(rwlj_array_resize(&array, max_len));
         rwlj_testing_expect_value(array.capacity, max_len);
-
-        rwlj_arena_destroy(&arena);
     }
 
-    // TODO: clean this up
-    IT("Doesn't allocate more than arena's total size")
+    TEST("Doesn't resize dynamic array past arena's total size")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
-        isize array_cap = 32;
-        rwlj_array_init_dynamic_reserve(&array, array_cap, &arena);
+        rwlj_array_init_dynamic(&array, &arena);
 
-        isize max_len = cast(isize)(arena.total_size - arena.allocated_size) /
-                        rwlj_size_of(isize);
-        rwlj_testing_expect(rwlj_array_resize(&array, max_len * max_len));
+        isize max_capacity = arena.total_size / array.item_size;
+        rwlj_testing_expect(rwlj_array_resize(&array, max_capacity + 1));
+        rwlj_testing_expect_value(array.capacity, max_capacity);
         rwlj_testing_expect_value(
-            array.capacity, cast(isize)(arena.total_size / array.item_size)
+            cast(isize) arena.total_size,
+            max_capacity * cast(isize) array.item_size
         );
-
-        rwlj_arena_destroy(&arena);
     }
 
     // TODO: clean this up
-    IT("Doesn't allocate more than arena's total size considering previous "
-       "allocations")
+    TEST(
+        "Doesn't resize dynamic array past arena's total size after previous "
+        "allocations"
+    )
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
-        u8 *_ = rwlj_arena_alloc(&arena, 128);
-        _ = rwlj_arena_alloc(&arena, 128);
+        u8 *allocation = rwlj_arena_alloc(&arena, 128);
+        allocation = rwlj_arena_alloc(&arena, 128);
+        rwlj_unused(allocation);
+
         usize allocated = arena.allocated_size;
-        rwlj_unused(_);
 
         rwljArray_Isize array = { 0 };
-        isize array_cap = 32;
-        rwlj_array_init_dynamic_reserve(&array, array_cap, &arena);
+        rwlj_array_init_dynamic(&array, &arena);
 
-        isize max_len = cast(isize)(arena.total_size - arena.allocated_size) /
-                        rwlj_size_of(isize);
-        rwlj_testing_expect(rwlj_array_resize(&array, max_len * max_len));
+        isize max_capacity = arena.total_size / array.item_size;
+        rwlj_testing_expect(rwlj_array_resize(&array, max_capacity));
         rwlj_testing_expect_value(
             array.capacity,
             cast(isize)((arena.total_size - allocated) / array.item_size)
         );
-
-        rwlj_arena_destroy(&arena);
     }
 
-    IT("Shrinks dynamic array")
+    TEST("Shrinks dynamic array")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
 
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_size_of_array(buf));
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
         rwljArray_Isize array = { 0 };
         isize array_cap = 32;
@@ -457,128 +552,1607 @@ test_array(void)
         isize array_new_size = RWLJ_GROW_FORMULA(0);
         rwlj_testing_expect(rwlj_array_resize(&array, array_new_size));
         rwlj_testing_expect_value(array.capacity, array_new_size);
+    }
 
-        rwlj_arena_destroy(&arena);
+    TEST("Appends to dynamic array")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        for (isize i = 0; i < array.capacity; i += 1) {
+            rwlj_testing_expect(rwlj_array_append(&array, i));
+        }
+        rwlj_testing_expect_value(array.len, array.capacity);
+
+        isize expected_values[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+    }
+
+    TEST("Appends to dynamic array and grows")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        isize old_capacity = array.capacity;
+        isize new_capacity = RWLJ_GROW_FORMULA(array.capacity);
+        for (isize i = 0, n = array.capacity; i < n + 1; i += 1) {
+            rwlj_testing_expect(rwlj_array_append(&array, i));
+        }
+        rwlj_testing_expect_value(array.len, old_capacity + 1);
+        rwlj_testing_expect_value(array.capacity, new_capacity);
+
+        isize expected_values[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+    }
+
+    TEST(
+        "Arbitrarily appends to dynamic array and grows up to arena's total "
+        "size"
+    )
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        isize new_capacity = cast(isize)(arena.total_size / array.item_size);
+        isize arbitrary_limit = new_capacity * new_capacity;
+        for (isize i = 0; i < arbitrary_limit; i += 1) {
+            if (i < new_capacity) {
+                rwlj_testing_expect(rwlj_array_append(&array, i));
+            } else {
+                rwlj_testing_expect(!rwlj_array_append(&array, i));
+            }
+        }
+        rwlj_testing_expect_value(array.len, new_capacity);
+        rwlj_testing_expect_value(array.capacity, new_capacity);
+        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
+    }
+
+    TEST("Preppends to dynamic array")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        for (isize i = 0; i < array.capacity; i += 1) {
+            rwlj_testing_expect(rwlj_array_insert(&array, 0, i));
+        }
+        rwlj_testing_expect_value(array.len, array.capacity);
+
+        isize expected_values[] = { 7, 6, 5, 4, 3, 2, 1, 0 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+    }
+
+    TEST("Preppends to dynamic array and grows")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        isize old_capacity = array.capacity;
+        isize new_capacity = RWLJ_GROW_FORMULA(array.capacity);
+        for (isize i = 0, n = array.capacity; i < n + 1; i += 1) {
+            rwlj_testing_expect(rwlj_array_insert(&array, 0, i));
+        }
+        rwlj_testing_expect_value(array.len, old_capacity + 1);
+        rwlj_testing_expect_value(array.capacity, new_capacity);
+
+        isize expected_values[] = { 8, 7, 6, 5, 4, 3, 2, 1, 0 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+    }
+
+    TEST(
+        "Arbitrarily preppends to dynamic array and grows up to arena's total "
+        "size"
+    )
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        isize new_capacity = cast(isize)(arena.total_size / array.item_size);
+        isize arbitrary_limit = new_capacity * new_capacity;
+        for (isize i = 0; i < arbitrary_limit; i += 1) {
+            if (i < new_capacity) {
+                rwlj_testing_expect(rwlj_array_insert(&array, 0, i));
+            } else {
+                rwlj_testing_expect(!rwlj_array_insert(&array, 0, i));
+            }
+        }
+        rwlj_testing_expect_value(array.len, new_capacity);
+        rwlj_testing_expect_value(array.capacity, new_capacity);
+        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
+    }
+
+    TEST("Inserts into dynamic array")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        for (isize i = 0; i < array.capacity; i += 1) {
+            rwlj_testing_expect(rwlj_array_insert(&array, array.len / 2, i));
+        }
+        rwlj_testing_expect_value(array.len, array.capacity);
+
+        isize expected_values[] = { 1, 3, 5, 7, 6, 4, 2, 0 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+    }
+
+    TEST("Inserts into dynamic array and grows")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        isize old_capacity = array.capacity;
+        isize new_capacity = RWLJ_GROW_FORMULA(array.capacity);
+        for (isize i = 0, n = array.capacity; i < n + 1; i += 1) {
+            rwlj_testing_expect(rwlj_array_insert(&array, array.len / 2, i));
+        }
+        rwlj_testing_expect_value(array.len, old_capacity + 1);
+        rwlj_testing_expect_value(array.capacity, new_capacity);
+
+        isize expected_values[] = { 1, 3, 5, 7, 8, 6, 4, 2, 0 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+    }
+
+    TEST(
+        "Arbitrarily inserts into dynamic array and grows up to arena's total "
+        "size"
+    )
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        isize new_capacity = cast(isize)(arena.total_size / array.item_size);
+        isize arbitrary_limit = new_capacity * new_capacity;
+        for (isize i = 0; i < arbitrary_limit; i += 1) {
+            if (i < new_capacity) {
+                rwlj_testing_expect(rwlj_array_insert(&array, 0, i));
+            } else {
+                rwlj_testing_expect(!rwlj_array_insert(&array, 0, i));
+            }
+        }
+        rwlj_testing_expect_value(array.len, new_capacity);
+        rwlj_testing_expect_value(array.capacity, new_capacity);
+        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
+    }
+
+    TEST("Dynamic array works as a stack")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        for (isize i = 0, n = array.capacity; i < n; i += 1) {
+            rwlj_testing_expect(rwlj_array_append(&array, i + 1));
+        }
+
+        isize expected_values[] = { 8, 7, 6, 5, 4, 3, 2, 1 };
+        for (isize i = 0, n = array.len; i < n; i += 1) {
+            rwlj_testing_expect_value(
+                rwlj_array_pop(&array), expected_values[i]
+            );
+        }
+        rwlj_testing_expect_value(array.len, 0);
+        rwlj_testing_expect(!rwlj_array_pop(&array));
+    }
+
+    TEST("Removes elements in an unordered fashion")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        for (isize i = 0, n = array.capacity; i < n; i += 1) {
+            rwlj_testing_expect(rwlj_array_append(&array, i + 1));
+        }
+
+        for (isize i = 0, n = array.len; i < n; i += 2) {
+            rwlj_array_remove_unordered(&array, i);
+        }
+
+        isize expected_values[] = { 8, 2, 7, 4, 6 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+        rwlj_testing_expect_value(array.len, 5);
+    }
+
+    TEST("Removes elements in an ordered fashion")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljArray_Isize array = { 0 };
+        rwlj_array_init_dynamic(&array, &arena);
+
+        for (isize i = 0, n = array.capacity; i < n; i += 1) {
+            rwlj_testing_expect(rwlj_array_append(&array, i + 1));
+        }
+
+        for (isize i = 0, n = array.len; i < n; i += 2) {
+            rwlj_array_remove_ordered(&array, i);
+        }
+
+        isize expected_values[] = { 2, 3, 5, 6, 8 };
+        for (isize i = 0; i < array.len; i += 1) {
+            rwlj_testing_expect_value(array.data[i], expected_values[i]);
+        }
+        rwlj_testing_expect_value(array.len, 5);
     }
 }
 
-// void
-// test_formatting(void)
-// {
-//     char buf[1024] = { 0 };
-//     rwljSlice_String buf_slice = { .data = buf,
-//                                    .len = rwlj_size_of_array(buf) };
-//     rwljString s = { .data = &buf_slice.data[0],
-//                      .len = rwlj_bprintf(buf_slice, "Hello, %s", "World") };
-//
-//     rwlj_testing_expect_string(s, STR_LIT("Hello, World"));
-// }
+void
+test_formatting(void)
+{
+    DESCRIBE("Formatting tests");
 
-// void
-// test_float_formatting(void)
-// {
-//     typedef struct rwljF64_Test {
-//         i64 precision;
-//         f64 f;
-//         rwljString expected;
-//     } rwljF64_Test;
-//
-//     // clang-format off
-//     rwljF64_Test tests[] = {
-//         {0,  rwlj_ldexp(8511030020275656, -342),  STR_LIT("9.e-88")},
-//         {1,  rwlj_ldexp(5201988407066741, -824),  STR_LIT("4.6e-233")},
-//         {2,  rwlj_ldexp(6406892948269899, +237),  STR_LIT("1.41e+87")},
-//         {3,  rwlj_ldexp(8431154198732492, +72),   STR_LIT("3.981e+37")},
-//         {4,  rwlj_ldexp(6475049196144587, +99),   STR_LIT("4.1040e+45")},
-//         {5,  rwlj_ldexp(8274307542972842, +726),  STR_LIT("2.92084e+234")},
-//         {6,  rwlj_ldexp(5381065484265332, -456),  STR_LIT("2.891946e-122")},
-//         {7,  rwlj_ldexp(6761728585499734, -1057), STR_LIT("4.3787718e-303")},
-//         {8,  rwlj_ldexp(7976538478610756, +376), STR_LIT("1.22770163e+129")},
-//         {9,  rwlj_ldexp(5982403858958067, +377),
-//         STR_LIT("1.841552452e+129")}, {10, rwlj_ldexp(5536995190630837, +93),
-//         STR_LIT("5.4835744350e+43")}, {11, rwlj_ldexp(7225450889282194,
-//         +710),  STR_LIT("3.89190181146e+229")}, {12,
-//         rwlj_ldexp(7225450889282194, +709),  STR_LIT("1.945950905732e+229")},
-//         {13, rwlj_ldexp(8703372741147379, +117),
-//         STR_LIT("1.4460958381605e+51")}, {14, rwlj_ldexp(8944262675275217,
-//         -1001), STR_LIT("4.17367747458531e-286")}, {15,
-//         rwlj_ldexp(7459803696087692, -707),
-//         STR_LIT("1.107950772878888e-197")}, {16, rwlj_ldexp(6080469016670379,
-//         -381),  STR_LIT("1.2345501366327440e-99")}, {17,
-//         rwlj_ldexp(8385515147034757, +721),
-//         STR_LIT("9.25031711960365024e+232")}, {18,
-//         rwlj_ldexp(7514216811389786, -828),
-//         STR_LIT("4.198047150284889840e-234")}, {19,
-//         rwlj_ldexp(8397297803260511, -345),
-//         STR_LIT("1.1716315319786511046e-88")}, {20,
-//         rwlj_ldexp(6733459239310543, +202),
-//         STR_LIT("4.32810072844612493629e+76")}, {21,
-//         rwlj_ldexp(8091450587292794, -473),
-//         STR_LIT("3.317710118160031081518e-127")},
-//
-//         {0,  rwlj_ldexp(6567258882077402, +952), STR_LIT("3.e+302")},
-//         {1,  rwlj_ldexp(6712731423444934, +535), STR_LIT("7.6e+176")},
-//         {2,  rwlj_ldexp(6712731423444934, +534), STR_LIT("3.78e+176")},
-//         {3,  rwlj_ldexp(5298405411573037, -957), STR_LIT("4.350e-273")},
-//         {4,  rwlj_ldexp(5137311167659507, -144), STR_LIT("2.3037e-28")},
-//         {5,  rwlj_ldexp(6722280709661868, +363), STR_LIT("1.26301e+125")},
-//         {6,  rwlj_ldexp(5344436398034927, -169), STR_LIT("7.142211e-36")},
-//         {7,  rwlj_ldexp(8369123604277281, -853), STR_LIT("1.3934574e-241")},
-//         {8,  rwlj_ldexp(8995822108487663, -780), STR_LIT("1.41463449e-219")},
-//         {9,  rwlj_ldexp(8942832835564782, -383),
-//         STR_LIT("4.539277920e-100")}, {10, rwlj_ldexp(8942832835564782,
-//         -384), STR_LIT("2.2696389598e-100")}, {11,
-//         rwlj_ldexp(8942832835564782, -385), STR_LIT("1.13481947988e-100")},
-//         {12, rwlj_ldexp(6965949469487146, -249),
-//         STR_LIT("7.700366561890e-60")}, {13, rwlj_ldexp(6965949469487146,
-//         -250), STR_LIT("3.8501832809448e-60")}, {14,
-//         rwlj_ldexp(6965949469487146, -251), STR_LIT("1.92509164047238e-60")},
-//         {15, rwlj_ldexp(7487252720986826, +548),
-//         STR_LIT("6.898586531774201e+180")}, {16, rwlj_ldexp(5592117679628511,
-//         +164), STR_LIT("1.3076622631878654e+65")}, {17,
-//         rwlj_ldexp(8887055249355788, +665),
-//         STR_LIT("1.36052020756121240e+216")}, {18,
-//         rwlj_ldexp(6994187472632449, +690),
-//         STR_LIT("3.592810217475959676e+223")}, {19,
-//         rwlj_ldexp(8797576579012143, +588),
-//         STR_LIT("8.9125197712484551899e+192")}, {20,
-//         rwlj_ldexp(7363326733505337, +272),
-//         STR_LIT("5.58769757362301140950e+97")}, {21,
-//         rwlj_ldexp(8549497411294502, -448),
-//         STR_LIT("1.176257830728540379990e-119")},
-//
-//         {3, 12345000, STR_LIT("1.234e+7")},
-//     };
-//     // clang-format on
-//
-//     u8 buf[1024] = { 0 };
-//     rwljSlice_U8 buf_slice = { .data = buf, .len = rwlj_size_of_array(buf) };
-//     for (isize i = 0; i < rwlj_size_of_array(tests); i += 1) {
-//         isize len =
-//             rwlj_format_f64(buf_slice, tests[i].f, 'f', tests[i].precision);
-//         rwljString formatted_float = { .data = cast(char *) buf_slice.data,
-//                                        .len = len };
-//         if (!rwlj_string_are_equal(formatted_float, tests[i].expected)) {
-//             printf(
-//                 "%ld: expected %.*s, got %*s\n",
-//                 i,
-//                 cast(i32) tests[i].expected.len,
-//                 tests[i].expected.data,
-//                 cast(i32) formatted_float.len,
-//                 formatted_float.data
-//             );
-//         }
-//         rwlj_slice_clear(&buf_slice);
-//     }
-// }
+    TEST("Prints text")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
 
-rwljTest_Proc test_arr[] = { test_arena, test_slice, test_array };
+        rwljString s = rwlj_string_from_fmt(&buf_slice, "Hello, World!");
+        rwljString expected = STRING("Hello, World!");
+        rwlj_testing_expect_value(s, expected);
+    }
+
+    TEST("Prints nothing")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        rwljString s = rwlj_string_from_fmt(&buf_slice, "");
+        rwljString expected = STRING("");
+        rwlj_testing_expect_value(s, expected);
+    }
+
+#define TEST_STRING                                                            \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    TEST("Prints the whole buffer")
+    {
+
+        u8 buf[rwlj_kb(1) / 8] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        for (isize i = 0; i < buf_slice.len; i += 1) {
+            buf_slice.data[i] = 'a';
+        }
+
+        rwljString s = rwlj_string_from_fmt(&buf_slice, TEST_STRING);
+        rwljString expected = STRING(TEST_STRING);
+        rwlj_testing_expect_value(s, expected);
+    }
+
+    TEST("Prints and doesn't go beyong buffer")
+    {
+#define BUF_LEN (rwlj_kb(1) / 16)
+
+        u8 buf[BUF_LEN] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        for (isize i = 0; i < buf_slice.len; i += 1) {
+            buf_slice.data[i] = 'a';
+        }
+
+        rwljString s = rwlj_string_from_fmt(&buf_slice, TEST_STRING);
+        rwljString expected = { TEST_STRING, BUF_LEN };
+        rwlj_testing_expect_value(s, expected);
+#undef BUF_LEN
+    }
+#undef TEST_STRING
+
+    TEST("Formats signed integer")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            isize value = RWLJ_I64_MIN;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%ld|", value);
+            rwljString expected = STRING("|-9223372036854775808|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = RWLJ_I64_MAX;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%ld|", value);
+            rwljString expected = STRING("|9223372036854775807|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Formats unsigned integer")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            usize value = RWLJ_U64_MIN;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lu|", value);
+            rwljString expected = STRING("|0|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = RWLJ_U64_MAX;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lu|", value);
+            rwljString expected = STRING("|18446744073709551615|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Formats base 2")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lb|", value);
+            rwljString expected =
+                STRING("|1101101001101000101110010010111001001001|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lb|", value);
+            rwljString expected =
+                STRING("|0b1101101001101000101110010010111001001001|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+    TEST("Formats base 8")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lo|", value);
+            rwljString expected = STRING("|15515056227111|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lo|", value);
+            rwljString expected = STRING("|0o15515056227111|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+    TEST("Formats base 16")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%lx|", value);
+            rwljString expected = STRING("|da68b92e49|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lx|", value);
+            rwljString expected = STRING("|0xda68b92e49|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            usize value = 938059837001llu;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%#lX|", value);
+            rwljString expected = STRING("|0XDA68B92E49|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Prints pointer")
+    {
+        u8 buf1[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf1_slice = rwlj_slice_from_buf(buf1);
+
+        u8 buf2[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf2_slice = rwlj_slice_from_buf(buf2);
+
+        {
+            void *addr = buf1;
+            rwljString s = rwlj_string_from_fmt(&buf1_slice, "|%p|", addr);
+            rwljString expected = {
+                cast(char *) buf2_slice.data,
+                snprintf(
+                    cast(char *) buf2_slice.data, buf2_slice.len, "|%p|", addr
+                )
+            };
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            void *addr = NULL;
+            rwljString s = rwlj_string_from_fmt(&buf1_slice, "|%p|", addr);
+            rwljString expected = STRING("|<nil>|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Prints boolean")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%t|", true);
+            rwljString expected = STRING("|true|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%t|", false);
+            rwljString expected = STRING("|false|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Formats cstring")
+    {
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+#define TEST_STRING ""
+            {
+                rwljString s =
+                    rwlj_string_from_fmt(&buf_slice, "|%s|", TEST_STRING);
+                rwljString expected = STRING("||");
+                rwlj_testing_expect_value_string(s, expected);
+            }
+#undef TEST_STRING
+#define TEST_STRING "Hello, World!"
+            {
+                rwljString s =
+                    rwlj_string_from_fmt(&buf_slice, "|%s|", TEST_STRING);
+                rwljString expected = STRING("|Hello, World!|");
+                rwlj_testing_expect_value_string(s, expected);
+            }
+#undef TEST_STRING
+        }
+    }
+
+    TEST("Prints sign")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            isize value = 22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%+ld|", value);
+            rwljString expected = STRING("|+22|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = -22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%+ld|", value);
+            rwljString expected = STRING("|-22|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Prints leading blank")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            isize value = 22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% ld|", value);
+            rwljString expected = STRING("| 22|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = -22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% ld|", value);
+            rwljString expected = STRING("|-22|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Ignore certain combinations of flags")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            isize value = 22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% +ld|", value);
+            rwljString expected = STRING("|+22|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = -22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|% +ld|", value);
+            rwljString expected = STRING("|-22|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Pads with 0s")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            isize value = 22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
+            rwljString expected = STRING("|00022|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = -22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
+            rwljString expected = STRING("|-0022|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = 0;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
+            rwljString expected = STRING("|00000|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = 12345;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
+            rwljString expected = STRING("|12345|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = 1234567;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05ld|", value);
+            rwljString expected = STRING("|1234567|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = 2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05g|", value);
+            rwljString expected = STRING("|002.5|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = -2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%05g|", value);
+            rwljString expected = STRING("|-02.5|");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Left justifies")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        {
+            isize value = 22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
+            rwljString expected = STRING("|22   |");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = -22;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
+            rwljString expected = STRING("|-22  |");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = 0;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
+            rwljString expected = STRING("|0    |");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = 12345;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
+            rwljString expected = STRING("|12345|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            isize value = 1234567;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5ld|", value);
+            rwljString expected = STRING("|1234567|");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = 2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5g|", value);
+            rwljString expected = STRING("|2.5  |");
+            rwlj_testing_expect_value(s, expected);
+        }
+        {
+            f64 value = -2.5;
+            rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-5g|", value);
+            rwljString expected = STRING("|-2.5 |");
+            rwlj_testing_expect_value(s, expected);
+        }
+    }
+
+    TEST("Left justify overrides zero pads")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 buf_slice = rwlj_slice_from_buf(buf);
+
+        isize value = 22;
+        rwljString s = rwlj_string_from_fmt(&buf_slice, "|%-05ld|", value);
+        rwljString expected = STRING("|22   |");
+        rwlj_testing_expect_value(s, expected);
+    }
+
+    typedef struct rwljF64_Test {
+        char *fmt;
+        f64 value;
+    } rwljF64_Test;
+
+    // Table 3: Stress Inputs for Converting 53-bit Binary to Decimal, <
+    // 1/2 ULP
+    // Table 4: Stress Inputs for Converting 53-bit Binary to Decimal, >
+    // 1/2 ULP
+#define F64_TEST_TABLE(fmt)                                                    \
+    { "%.0" #fmt, ldexp(8511030020275656.0, -342) },                           \
+        { "%.1" #fmt, ldexp(5201988407066741.0, -824) },                       \
+        { "%.2" #fmt, ldexp(6406892948269899.0, +237) },                       \
+        { "%.3" #fmt, ldexp(8431154198732492.0, +72) },                        \
+        { "%.4" #fmt, ldexp(6475049196144587.0, +99) },                        \
+        { "%.5" #fmt, ldexp(8274307542972842.0, +726) },                       \
+        { "%.6" #fmt, ldexp(5381065484265332.0, -456) },                       \
+        { "%.7" #fmt, ldexp(6761728585499734.0, -1057) },                      \
+        { "%.8" #fmt, ldexp(7976538478610756.0, +376) },                       \
+        { "%.9" #fmt, ldexp(5982403858958067.0, +377) },                       \
+        { "%.10" #fmt, ldexp(5536995190630837.0, +93) },                       \
+        { "%.11" #fmt, ldexp(7225450889282194.0, +710) },                      \
+        { "%.12" #fmt, ldexp(7225450889282194.0, +709) },                      \
+        { "%.13" #fmt, ldexp(8703372741147379.0, +117) },                      \
+        { "%.14" #fmt, ldexp(8944262675275217.0, -1001) },                     \
+        { "%.15" #fmt, ldexp(7459803696087692.0, -707) },                      \
+        { "%.16" #fmt, ldexp(6080469016670379.0, -381) },                      \
+        { "%.17" #fmt, ldexp(8385515147034757.0, +721) },                      \
+        { "%.18" #fmt, ldexp(7514216811389786.0, -828) },                      \
+        { "%.19" #fmt, ldexp(8397297803260511.0, -345) },                      \
+        { "%.20" #fmt, ldexp(6733459239310543.0, +202) },                      \
+        { "%.21" #fmt, ldexp(8091450587292794.0, -473) },                      \
+        { "%.0" #fmt, ldexp(6567258882077402.0, +952) },                       \
+        { "%.1" #fmt, ldexp(6712731423444934.0, +535) },                       \
+        { "%.2" #fmt, ldexp(6712731423444934.0, +534) },                       \
+        { "%.3" #fmt, ldexp(5298405411573037.0, -957) },                       \
+        { "%.4" #fmt, ldexp(5137311167659507.0, -144) },                       \
+        { "%.5" #fmt, ldexp(6722280709661868.0, +363) },                       \
+        { "%.6" #fmt, ldexp(5344436398034927.0, -169) },                       \
+        { "%.7" #fmt, ldexp(8369123604277281.0, -853) },                       \
+        { "%.8" #fmt, ldexp(8995822108487663.0, -780) },                       \
+        { "%.9" #fmt, ldexp(8942832835564782.0, -383) },                       \
+        { "%.10" #fmt, ldexp(8942832835564782.0, -384) },                      \
+        { "%.11" #fmt, ldexp(8942832835564782.0, -385) },                      \
+        { "%.12" #fmt, ldexp(6965949469487146.0, -249) },                      \
+        { "%.13" #fmt, ldexp(6965949469487146.0, -250) },                      \
+        { "%.14" #fmt, ldexp(6965949469487146.0, -251) },                      \
+        { "%.15" #fmt, ldexp(7487252720986826.0, +548) },                      \
+        { "%.16" #fmt, ldexp(5592117679628511.0, +164) },                      \
+        { "%.17" #fmt, ldexp(8887055249355788.0, +665) },                      \
+        { "%.18" #fmt, ldexp(6994187472632449.0, +690) },                      \
+        { "%.19" #fmt, ldexp(8797576579012143.0, +588) },                      \
+        { "%.20" #fmt, ldexp(7363326733505337.0, +272) },                      \
+        { "%.21" #fmt, ldexp(8549497411294502.0, -448) },
+
+    TEST("Formats floats with f")
+    {
+        rwljF64_Test tests[] = { F64_TEST_TABLE(f) };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
+
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
+            rwljF64_Test test = tests[i];
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            rwljString printf_string = rwlj_string(
+                printf_slice,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
+
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_string.len,
+                    rwlj_string,
+                    rwlj_string.len
+                );
+                success = false;
+            }
+        }
+    }
+
+    TEST("Formats floats with e")
+    {
+        rwljF64_Test tests[] = { F64_TEST_TABLE(e) };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
+
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
+            rwljF64_Test test = tests[i];
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            rwljString printf_string = rwlj_string(
+                printf_slice,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
+
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_string.len,
+                    rwlj_string,
+                    rwlj_string.len
+                );
+                success = false;
+            }
+        }
+    }
+
+    TEST("Formats floats with g")
+    {
+        rwljF64_Test tests[] = { F64_TEST_TABLE(g) };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
+
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
+            rwljF64_Test test = tests[i];
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            rwljString printf_string = rwlj_string(
+                printf_slice,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
+
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_string.len,
+                    rwlj_string,
+                    rwlj_string.len
+                );
+                success = false;
+            }
+        }
+    }
+
+    TEST("Formats floats with a")
+    {
+        rwljF64_Test tests[] = { F64_TEST_TABLE(a) };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
+
+        for (isize i = 0; i < rwlj_count_of(tests); i += 1) {
+            rwljF64_Test test = tests[i];
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.fmt,
+                test.value
+            );
+            rwljString printf_string = rwlj_string(
+                printf_slice,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
+
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.fmt, test.value);
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_string.len,
+                    rwlj_string,
+                    rwlj_string.len
+                );
+                success = false;
+            }
+        }
+    }
+#undef F64_TEST_TABLE
+
+    TEST("Formats floats")
+    {
+        typedef struct rwljF64_Single_Test {
+            f64 value;
+            i64 prec;
+            char fmt;
+            char *printf_fmt;
+        } rwljF64_Single_Test;
+
+        typedef struct rwljF64_Double_Test {
+            f64 value[2];
+            i64 prec;
+            char fmt;
+            char *printf_fmt;
+        } rwljF64_Double_Test;
+
+        rwljF64_Single_Test tests_single[] = {
+            { -3.0, -1, 'f', "%f" },
+            { -8.88888888, 10, 'f', "%.10f" },
+            { -880.88888888, 10, 'f', "%.10f" },
+            { 4.1, 1, 'f', "%.1f" },
+            { 0.1, 0, 'f', "%.0f" },
+            { 1e-4, 2, 'f', "%.2f" },
+            { -5.2, 2, 'f', "%.2f" },
+            { 0., 1, 'f', "%.1f" },
+            { -0., -1, 'f', "%f" },
+            { 9.09834e-07, -1, 'f', "%f" },
+            { 38685626227668133590597632.0, 1, 'f', "%.1f" }, // 10
+            { 5e-7, 24, 'f', "%.24f" },
+            { 1e-8, 10, 'f', "%.10f" },
+            { 100056789.0, 1, 'f', "%.1f" },
+            { 1.23, 2, 'f', "%.2f" },
+            { -3.0, -1, 'e', "%e" },
+            { 4.1, 1, 'E', "%.1E" },
+            { -5.2, 2, 'e', "%.2e" },
+            { 3.14159265, -1, 'g', "%g" },
+            { 4.1, 1, 'G', "%.1G" },
+            { 3e-300, -1, 'g', "%g" },
+            { 1.2, 0, 'g', "%.0g" },
+        };
+
+        rwljF64_Double_Test tests_double[] = {
+            { { 0.3, -3.0 }, -1, 'g', "%g %g" },
+            { { 3.704, 3.706 }, 3, 'g', "%.3g %.3g" },
+        };
+
+        u8 ftoa_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 ftoa_slice = rwlj_slice_from_buf(ftoa_buf);
+
+        u8 printf_buf[rwlj_kb(1)] = { 0 };
+        rwljSlice_U8 printf_slice = rwlj_slice_from_buf(printf_buf);
+
+        for (isize i = 0; i < rwlj_count_of(tests_single); i += 1) {
+            rwljF64_Single_Test test = tests_single[i];
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(i32) printf_slice.len,
+                test.printf_fmt,
+                test.value
+            );
+            rwljString printf_string = rwlj_string(
+                printf_slice,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
+
+            rwljString rwlj_string =
+                rwlj_string_from_fmt(&ftoa_slice, test.printf_fmt, test.value);
+
+            if (!rwlj_string_are_equal(rwlj_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_string.len,
+                    rwlj_string,
+                    rwlj_string.len
+                );
+                success = false;
+            }
+        }
+
+        for (isize i = 0; i < rwlj_count_of(tests_double); i += 1) {
+            rwljF64_Double_Test test = tests_double[i];
+
+            stbsp_snprintf(
+                cast(char *) printf_slice.data,
+                cast(usize) printf_slice.len,
+                test.printf_fmt,
+                test.value[0],
+                test.value[1]
+            );
+            rwljString printf_string = rwlj_string(
+                printf_slice,
+                0,
+                cast(isize) strlen(cast(char *) printf_slice.data)
+            );
+
+            rwljString ftoa_string = rwlj_string_from_fmt(
+                &ftoa_slice, test.printf_fmt, test.value[0], test.value[1]
+            );
+
+            if (!rwlj_string_are_equal(ftoa_string, printf_string)) {
+                rwlj_printfln(
+                    "%ld - expected { %S, %ld }, got { %S, %ld }",
+                    i,
+                    printf_string,
+                    printf_string.len,
+                    ftoa_string,
+                    ftoa_string.len
+                );
+                success = false;
+            }
+        }
+    }
+}
+
+void
+test_string_builder(void)
+{
+    DESCRIBE("rwljString_Builder tests");
+
+    TEST("Creates string builder")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        isize capacity = 256;
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, capacity, &arena);
+
+        rwlj_testing_expect(sb.buf != NULL);
+        rwlj_testing_expect_value(sb.len, 0);
+        rwlj_testing_expect_value(sb.capacity, capacity);
+    }
+
+    TEST("Writes i64")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, 256, &arena);
+
+        rwljString s = rwlj_string_builder_write_i64(&sb, -123456);
+        rwljString expected = STRING("-123456");
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+    TEST("Writes u64")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, 256, &arena);
+
+        rwljString s = rwlj_string_builder_write_u64(&sb, 123456, 'u');
+        rwljString expected = STRING("123456");
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+    TEST("Writes f64")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, 256, &arena);
+
+        rwljString expected = STRING("3.14159");
+        rwljString s =
+            rwlj_string_builder_write_f64(&sb, 3.14159, 'f', expected.len - 2);
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+    TEST("Writes string")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, 256, &arena);
+
+        rwljString expected = STRING("Hello, World!\n");
+        rwljString s = rwlj_string_builder_write_string(&sb, expected);
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+
+#define TEST_STRING                                                            \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       \
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    TEST("Doesnt' write past buffer")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString longer_s = STRING(TEST_STRING TEST_STRING);
+        rwljString expected = STRING(TEST_STRING);
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, expected.len, &arena);
+
+        rwljString s = rwlj_string_builder_write_string(&sb, longer_s);
+
+        rwlj_testing_expect_value(s.len, expected.len);
+        rwlj_testing_expect_value_string(s, expected);
+    }
+#undef TEST_STRING
+
+    TEST("Writes multiple strings")
+    {
+        u8 buf[rwlj_kb(1)] = { 0 };
+
+        rwljArena arena = { 0 };
+        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+        rwljString_Builder sb = { 0 };
+        rwlj_string_builder_init(&sb, 300, &arena);
+
+        rwljString expected1 = STRING("string 1.");
+        rwljString expected2 = STRING("string 2..");
+        rwljString expected3 = STRING("string 3...");
+
+        rwljString expected_arr[3] = { expected1, expected2, expected3 };
+        rwljSlice_String expected_slice = rwlj_slice_from_array(expected_arr);
+
+        rwljString arr[30] = { 0 };
+        rwljSlice_String slice = rwlj_slice_from_array(arr);
+
+        for (isize i = 0; i < slice.len; i += 1) {
+            rwlj_slice_set(
+                &slice,
+                i,
+                rwlj_string_builder_write_string(
+                    &sb, expected_slice.data[i % 3]
+                )
+            );
+        }
+
+        rwlj_testing_expect_value_string(
+            rwlj_string_builder_write_string(
+                &sb, STRING("This shouldn't work")
+            ),
+            STRING("")
+        );
+        rwlj_testing_expect_value(sb.len, sb.capacity);
+
+        for (isize i = 0; i < slice.len; i += 1) {
+            rwlj_testing_expect_value_string(
+                slice.data[i], expected_slice.data[i % 3]
+            );
+        }
+    }
+
+    // TODO: Test sbprint*
+}
+
+void
+test_string(void)
+{
+    DESCRIBE("rwljString procedures tests");
+
+    TEST("Compares strings")
+    {
+        {
+            rwljString a = STRING("");
+            rwljString b = STRING("");
+
+            rwlj_testing_expect(!rwlj_string_compare(a, b));
+        }
+        {
+            rwljString a = STRING("abcdefhjklmnopqrstuvwxyz");
+            rwljString b = STRING("abcdefhjklmnopqrstuvwxyz");
+
+            rwlj_testing_expect(!rwlj_string_compare(a, b));
+        }
+        {
+            rwljString a = STRING("abcdefhjklmnopqrstuvwxyz");
+            rwljString b = STRING("abcdefhjklmnopqrstuvwxyZ");
+
+            rwlj_testing_expect_value(rwlj_string_compare(a, b), 32);
+        }
+        {
+            rwljString a = STRING("abcdefhjklmnopqrstuvwxyZ");
+            rwljString b = STRING("abcdefhjklmnopqrstuvwxyz");
+
+            rwlj_testing_expect_value(rwlj_string_compare(a, b), -32);
+        }
+    }
+
+    TEST("Compares strings case-insensitive")
+    {
+        {
+            rwljString a = STRING("");
+            rwljString b = STRING("");
+
+            rwlj_testing_expect(!rwlj_string_compare_insensitive(a, b));
+        }
+        {
+            rwljString a = STRING("abcdefhjklmnopqrstuvwxyz");
+            rwljString b = STRING("abcdefhjklmnopqrstuvwxyZ");
+
+            rwlj_testing_expect(!rwlj_string_compare_insensitive(a, b));
+        }
+        {
+            rwljString a = STRING("abcdefhjklmnopqrstuvwxyz");
+            rwljString b = STRING("abcdefhjklmnopqrstuvwxya");
+
+            rwlj_testing_expect_value(
+                rwlj_string_compare_insensitive(a, b), 25
+            );
+        }
+    }
+
+    TEST("Compares strings with different lengths")
+    {
+        {
+            rwljString a = STRING("");
+            rwljString b = STRING("");
+
+            rwlj_testing_expect(rwlj_string_are_equal(a, b));
+        }
+        {
+            rwljString a = STRING("abcdefhjklmnopqrstuvwxyz");
+            rwljString b = STRING("abcdefhjklmnopqrstuvwxy");
+
+            rwlj_testing_expect(!rwlj_string_are_equal(a, b));
+        }
+        {
+            rwljString a = STRING("abCdeFHjKlmnopQRstuvwXyz");
+            rwljString b = STRING("abcDefhJklMnoPqrstUvwxyz");
+
+            rwlj_testing_expect(!rwlj_string_are_equal(a, b));
+        }
+        {
+            rwljString a = STRING("abCdeFHjKlmnopQRstuvwXyz");
+            rwljString b = STRING("abcDefhJklMnoPqrstUvwxyz");
+
+            rwlj_testing_expect(rwlj_string_are_equal_insensitive(a, b));
+        }
+        {
+            rwljString a = STRING("abCdeFHjKlmnopQRstuvwXyz");
+            rwljString b = STRING("abcDefhJklMnoPqrstUvwxy");
+
+            rwlj_testing_expect(!rwlj_string_are_equal_insensitive(a, b));
+        }
+    }
+
+    // Remake these tests
+    TEST("Check if string contains substring")
+    {
+        {
+            rwljString s = STRING("");
+            rwljString substr = STRING("");
+
+            rwlj_testing_expect(rwlj_string_contains(s, substr));
+        }
+        {
+            rwljString s = STRING("abcdef");
+            rwljString substr = STRING("");
+
+            rwlj_testing_expect(rwlj_string_contains(s, substr));
+        }
+        {
+            rwljString s = STRING("bacbcaabcb");
+            rwljString substr = STRING("abc");
+
+            rwlj_testing_expect(rwlj_string_contains(s, substr));
+        }
+        {
+            rwljString s = STRING("abcdefghijkl");
+            rwljString substr = STRING("xyz");
+
+            rwlj_testing_expect(!rwlj_string_contains(s, substr));
+        }
+        {
+            rwljString s = STRING("        .");
+            rwljString substr = STRING(".");
+
+            rwlj_testing_expect(rwlj_string_contains(s, substr));
+        }
+    }
+
+    TEST("Finds substring index")
+    {
+        {
+            rwljString s = STRING("");
+            rwljString substr = STRING("");
+            isize index = 0;
+
+            rwlj_testing_expect_value(rwlj_string_index(s, substr), index);
+        }
+        {
+            rwljString s = STRING("abcdef");
+            rwljString substr = STRING("");
+            isize index = 0;
+
+            rwlj_testing_expect_value(rwlj_string_index(s, substr), index);
+        }
+        {
+            rwljString s = STRING(".123456789");
+            rwljString substr = STRING(".");
+            isize index = 0;
+
+            rwlj_testing_expect_value(rwlj_string_index(s, substr), index);
+        }
+        {
+            rwljString s = STRING("01234.6789");
+            rwljString substr = STRING(".");
+            isize index = 5;
+
+            rwlj_testing_expect_value(rwlj_string_index(s, substr), index);
+        }
+        {
+            rwljString s = STRING("0123456789.");
+            rwljString substr = STRING(".");
+            isize index = 10;
+
+            rwlj_testing_expect_value(rwlj_string_index(s, substr), index);
+        }
+    }
+
+    TEST("Count number of substrings in string")
+    {
+        {
+            rwljString s = STRING("");
+            rwljString substr = STRING("");
+            isize count = 1;
+
+            rwlj_testing_expect_value(rwlj_string_count(s, substr), count);
+        }
+        {
+            rwljString s = STRING("abcdef");
+            rwljString substr = STRING("");
+            isize count = 7;
+
+            rwlj_testing_expect_value(rwlj_string_count(s, substr), count);
+        }
+        {
+            rwljString s = STRING("abc1234abc678abc9abc0123abc");
+            rwljString substr = STRING("abc");
+            isize count = 5;
+
+            rwlj_testing_expect_value(rwlj_string_count(s, substr), count);
+        }
+        {
+            rwljString s = STRING(".1.34.678.9012.45678.");
+            rwljString substr = STRING(".");
+            isize count = 6;
+
+            rwlj_testing_expect_value(rwlj_string_count(s, substr), count);
+        }
+        {
+            rwljString s = STRING("..........");
+            rwljString substr = STRING(".");
+            isize count = 10;
+
+            rwlj_testing_expect_value(rwlj_string_count(s, substr), count);
+        }
+    }
+
+    TEST("Splits strings into parts")
+    {
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING("");
+            rwljString b = STRING("");
+
+            rwljSlice_String c = rwlj_string_split(a, b, &arena);
+            rwlj_testing_expect_value(c.len, 0);
+            rwlj_testing_expect_value(arena.allocated_size, 0);
+        }
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING("abcdef");
+            rwljString b = STRING("");
+
+            rwljString expected_buf[] = {
+                STRING("a"), STRING("b"), STRING("c"),
+                STRING("d"), STRING("e"), STRING("f"),
+            };
+            rwljSlice_String expected = { expected_buf,
+                                          rwlj_count_of(expected_buf) };
+
+            rwljSlice_String c = rwlj_string_split(a, b, &arena);
+            rwlj_testing_expect_value(c.len, expected.len);
+            rwlj_testing_expect_value(
+                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+            );
+
+            for (isize i = 0; i < expected.len && i < c.len; i += 1) {
+                rwlj_testing_expect_value_string(c.data[i], expected.data[i]);
+            }
+        }
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING(".");
+            rwljString b = STRING(".");
+
+            rwljString expected_buf[] = {
+                STRING(""),
+                STRING(""),
+            };
+            rwljSlice_String expected = { expected_buf,
+                                          rwlj_count_of(expected_buf) };
+
+            rwljSlice_String c = rwlj_string_split(a, b, &arena);
+            rwlj_testing_expect_value(c.len, expected.len);
+            rwlj_testing_expect_value(
+                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+            );
+
+            for (isize i = 0; i < expected.len && i < c.len; i += 1) {
+                rwlj_testing_expect_value_string(c.data[i], expected.data[i]);
+            }
+        }
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING("1234abc678abc9abc0123");
+            rwljString b = STRING("abc");
+
+            rwljString expected_buf[] = {
+                STRING("1234"),
+                STRING("678"),
+                STRING("9"),
+                STRING("0123"),
+            };
+            rwljSlice_String expected = { expected_buf,
+                                          rwlj_count_of(expected_buf) };
+
+            rwljSlice_String c = rwlj_string_split(a, b, &arena);
+            rwlj_testing_expect_value(c.len, expected.len);
+            rwlj_testing_expect_value(
+                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+            );
+
+            for (isize i = 0; i < expected.len && i < c.len; i += 1) {
+                rwlj_testing_expect_value_string(c.data[i], expected.data[i]);
+            }
+        }
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING(".1.34.678.0.");
+            rwljString b = STRING(".");
+
+            rwljString expected_buf[] = {
+                STRING(""),    STRING("1"), STRING("34"),
+                STRING("678"), STRING("0"), STRING(""),
+            };
+            rwljSlice_String expected = { expected_buf,
+                                          rwlj_count_of(expected_buf) };
+
+            rwljSlice_String c = rwlj_string_split(a, b, &arena);
+            rwlj_testing_expect_value(c.len, expected.len);
+            rwlj_testing_expect_value(
+                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+            );
+
+            for (isize i = 0; i < expected.len && i < c.len; i += 1) {
+                rwlj_testing_expect_value_string(c.data[i], expected.data[i]);
+            }
+        }
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING("..........");
+            rwljString b = STRING(".");
+
+            rwljString expected_buf[] = {
+                STRING(""), STRING(""), STRING(""), STRING(""),
+                STRING(""), STRING(""), STRING(""), STRING(""),
+                STRING(""), STRING(""), STRING(""),
+            };
+            rwljSlice_String expected = { expected_buf,
+                                          rwlj_count_of(expected_buf) };
+
+            rwljSlice_String c = rwlj_string_split(a, b, &arena);
+            rwlj_testing_expect_value(c.len, expected.len);
+            rwlj_testing_expect_value(
+                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+            );
+
+            for (isize i = 0; i < expected.len && i < c.len; i += 1) {
+                rwlj_testing_expect_value_string(c.data[i], expected.data[i]);
+            }
+        }
+    }
+
+    TEST("Concatenates strings")
+    {
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING("");
+            rwljString b = STRING("");
+
+            rwljString c = rwlj_string_concatenate(a, b, &arena);
+
+            rwlj_testing_expect_value_string(c, STRING(""));
+        }
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING("a");
+            rwljString b = STRING("");
+
+            rwljString c = rwlj_string_concatenate(a, b, &arena);
+
+            rwlj_testing_expect_value_string(c, STRING("a"));
+        }
+        {
+            u8 buf[rwlj_kb(1)] = { 0 };
+            rwljArena arena = { 0 };
+            rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+
+            rwljString a = STRING("eis que ");
+            rwljString b = STRING("a 10/10 IGN");
+
+            rwljString c = rwlj_string_concatenate(a, b, &arena);
+
+            rwlj_testing_expect_value_string(c, STRING("eis que a 10/10 IGN"));
+        }
+    }
+}
+
+// clang-format off
+rwljTest_Proc test_arr[] = {
+    test_math,
+    test_arena,
+    test_slice,
+    test_array,
+    test_formatting,
+    test_string_builder,
+    test_string,
+};
+// clang-format on
 
 int
 main(void)
 {
-    for (isize i = 0; i < rwlj_size_of_array(test_arr); i += 1) {
+    for (isize i = 0; i < rwlj_count_of(test_arr); i += 1) {
         (test_arr[i])();
-        rwlj_printf("\n");
+        rwlj_println(STRING(""));
     }
 }
