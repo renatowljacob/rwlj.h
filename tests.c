@@ -1292,7 +1292,7 @@ test_formatting(void)
                 test.value
             );
             rwljString printf_string = rwlj_string(
-                printf_slice.data,
+                printf_slice,
                 0,
                 cast(isize) strlen(cast(char *) printf_slice.data)
             );
@@ -1334,7 +1334,7 @@ test_formatting(void)
                 test.value
             );
             rwljString printf_string = rwlj_string(
-                printf_slice.data,
+                printf_slice,
                 0,
                 cast(isize) strlen(cast(char *) printf_slice.data)
             );
@@ -1376,7 +1376,7 @@ test_formatting(void)
                 test.value
             );
             rwljString printf_string = rwlj_string(
-                cast(char *) printf_slice.data,
+                printf_slice,
                 0,
                 cast(isize) strlen(cast(char *) printf_slice.data)
             );
@@ -1418,7 +1418,7 @@ test_formatting(void)
                 test.value
             );
             rwljString printf_string = rwlj_string(
-                cast(char *) printf_slice.data,
+                printf_slice,
                 0,
                 cast(isize) strlen(cast(char *) printf_slice.data)
             );
@@ -1503,7 +1503,7 @@ test_formatting(void)
                 test.value
             );
             rwljString printf_string = rwlj_string(
-                cast(char *) printf_slice.data,
+                printf_slice,
                 0,
                 cast(isize) strlen(cast(char *) printf_slice.data)
             );
@@ -1535,7 +1535,7 @@ test_formatting(void)
                 test.value[1]
             );
             rwljString printf_string = rwlj_string(
-                cast(char *) printf_slice.data,
+                printf_slice,
                 0,
                 cast(isize) strlen(cast(char *) printf_slice.data)
             );

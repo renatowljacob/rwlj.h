@@ -639,14 +639,15 @@ GENERIC_ARRAY(rwljString, String);
 
 #define STRING(string) cast(rwljString){ string, rwlj_size_of(string) - 1 }
 
-#define rwlj_string(ptr, start, end)                                           \
+#define rwlj_string_from_ptr(ptr, start, end)                                  \
     cast(rwljString)                                                           \
     {                                                                          \
         cast(char *) & (ptr)[start], rwlj_max((end) - (start), 0)              \
     }
 
-#define rwlj_string_from_slice(slice)                                          \
-    rwlj_string((slice)->data, 0, (slice)->len)
+#define rwlj_string(str, start, end) rwlj_string_from_ptr(str.data, start, end)
+
+#define rwlj_string_from_slice(slice) rwlj_string(slice, 0, (slice)->len)
 
 // rwljString procedures
 isize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
@@ -1284,7 +1285,7 @@ __rwlj_string_contains(rwljString s, rwljString substr, bool sensitive)
 
     for (isize i = 0; i < s.len; i += 1) {
         if (!__rwlj_string_compare(
-                rwlj_string(s.data, i, s.len), substr, sensitive
+                rwlj_string(s, i, s.len), substr, sensitive
             )) {
             return true;
         }
@@ -1301,7 +1302,7 @@ __rwlj_string_index(rwljString s, rwljString substr, bool sensitive)
 
     for (isize i = 0; i < s.len; i += 1) {
         if (!__rwlj_string_compare(
-                rwlj_string(s.data, i, s.len), substr, sensitive
+                rwlj_string(s, i, s.len), substr, sensitive
             )) {
             return i;
         }
@@ -1319,7 +1320,7 @@ __rwlj_string_count(rwljString s, rwljString substr, bool sensitive)
     isize count = 0;
     for (isize i = 0; i < s.len; i += 1) {
         if (!__rwlj_string_compare(
-                rwlj_string(s.data, i, s.len), substr, sensitive
+                rwlj_string(s, i, s.len), substr, sensitive
             )) {
             count += 1;
             i += (substr.len - 1);
@@ -1346,7 +1347,7 @@ __rwlj_string_split(
     if (separator.len == 0 && separator.data[0] == '\0') {
         rwlj_array_init_dynamic_reserve(&parts, s.len, arena);
         for (isize i = 0; i < s.len; i += 1) {
-            rwlj_array_append(&parts, rwlj_string(s.data, i, i + 1));
+            rwlj_array_append(&parts, rwlj_string(s, i, i + 1));
         }
 
         return (rwljSlice_String){ parts.data, parts.len };
@@ -1363,10 +1364,10 @@ __rwlj_string_split(
     isize start = 0;
     for (isize i = 0; i < n; i += 1) {
         isize res = __rwlj_string_index(
-            rwlj_string(s.data, index, s.len), separator, sensitive
+            rwlj_string(s, index, s.len), separator, sensitive
         );
         index = res == -1 ? s.len : index + res;
-        rwljString part = rwlj_string(s.data, start, index);
+        rwljString part = rwlj_string(s, start, index);
         rwlj_array_append(&parts, part);
         start = index = rwlj_min(index + separator.len, s.len);
     }
@@ -1405,7 +1406,7 @@ rwlj_string_concatenate(rwljString a, rwljString b, rwljArena *arena)
         buf[i] = cast(u8) b.data[j];
     }
 
-    return rwlj_string(buf, 0, buf_len);
+    return rwlj_string_from_ptr(buf, 0, buf_len);
 }
 
 rwljString
@@ -2952,10 +2953,9 @@ __rwlj_bprintf_va(
                 continue;
             }
 
-            rwljString str = {
-                .data = s,
-                .len = rwlj_string_cstrlen(s, buf.len - bytes_written)
-            };
+            rwljString str = rwlj_string_from_ptr(
+                s, 0, rwlj_cstring_len(s, buf.len - bytes_written)
+            );
             bytes_written += rwlj_write_string(
                 (rwljSlice_U8)rwlj_slice(buf.data, bytes_written, buf.len), str
             );
@@ -3234,7 +3234,7 @@ rwlj_string_builder_write_i64(rwljString_Builder *sb, i64 number)
         number
     );
 
-    return rwlj_string(sb->buf, start, sb->len);
+    return rwlj_string_from_ptr(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3247,7 +3247,7 @@ rwlj_string_builder_write_u64(rwljString_Builder *sb, u64 number, u8 fmt)
         fmt
     );
 
-    return rwlj_string(sb->buf, start, sb->len);
+    return rwlj_string_from_ptr(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3266,7 +3266,7 @@ rwlj_string_builder_write_f64(
         precision
     );
 
-    return rwlj_string(sb->buf, start, sb->len);
+    return rwlj_string_from_ptr(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3278,13 +3278,13 @@ rwlj_string_builder_write_string(rwljString_Builder *sb, rwljString s)
         s
     );
 
-    return rwlj_string(sb->buf, start, sb->len);
+    return rwlj_string_from_ptr(sb->buf, start, sb->len);
 }
 
 rwljString
 rwlj_string_builder_to_string(rwljString_Builder *sb)
 {
-    return rwlj_string(sb->buf, 0, sb->len);
+    return rwlj_string_from_ptr(sb->buf, 0, sb->len);
 }
 
 rwljString
@@ -3315,7 +3315,7 @@ rwlj_sbprintf(rwljString_Builder *sb, char const *fmt, ...)
     );
     va_end(ap);
 
-    return rwlj_string(sb->buf, start, sb->len);
+    return rwlj_string_from_ptr(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3333,7 +3333,7 @@ rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...)
     );
     va_end(ap);
 
-    return rwlj_string(sb->buf, start, sb->len);
+    return rwlj_string_from_ptr(sb->buf, start, sb->len);
 }
 
 rwljString
@@ -3342,7 +3342,7 @@ rwlj_sbprint(rwljString_Builder *sb, rwljString s)
     rwljSlice_U8 buf = rwlj_slice(cast(u8 *) sb->buf, sb->len, sb->capacity);
     isize bytes_written = rwlj_bprint(buf, s);
 
-    return rwlj_string(sb->buf, 0, bytes_written);
+    return rwlj_string_from_ptr(sb->buf, 0, bytes_written);
 }
 
 rwljString
@@ -3355,7 +3355,7 @@ rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
         bytes_written += 1;
     }
 
-    return rwlj_string(sb->buf, sb->len, bytes_written);
+    return rwlj_string_from_ptr(sb->buf, sb->len, bytes_written);
 }
 
 /*
