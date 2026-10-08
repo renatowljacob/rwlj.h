@@ -215,7 +215,7 @@ rwlj_static_assert(sizeof(f64) == 8);
 
 #define RWLJ_TRAP() __debugbreak()
 
-#elif
+#else
 
 #define RWLJ_TRAP() __builtin_trap()
 
@@ -1141,13 +1141,12 @@ rwlj_virtual_memory_reserve(usize size)
 void *
 rwlj_virtual_memory_commit(void *mem, usize size)
 {
-    void *allocation = mprotect(mem, size, PROT_READ | PROT_WRITE);
     rwlj_assert(
-        allocation != NULL &&
-        rwlj_align_pow2(cast(intptr) allocation, RWLJ_DEFAULT_ALIGNMENT)
+        mem != NULL && rwlj_align_pow2(cast(intptr) mem, RWLJ_DEFAULT_ALIGNMENT)
     );
+    mprotect(mem, size, PROT_READ | PROT_WRITE);
 
-    return allocation;
+    return mem;
 }
 
 void
