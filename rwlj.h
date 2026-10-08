@@ -455,6 +455,19 @@ void *rwlj_virtual_memory_commit(void *mem, usize size);
 void rwlj_virtual_memory_uncommit(void *mem, usize size);
 void rwlj_virtual_memory_free(void *mem, usize size);
 
+typedef struct rwljMemory_Block {
+    usize reserve_size;
+    usize commit_size;
+    usize committed;
+    usize used;
+    struct rwljMemory_Block *prev;
+} rwljMemory_Block;
+
+rwljMemory_Block *
+rwlj_memory_block_create(usize reserve_size, usize commit_size);
+void rwlj_memory_block_free(rwljMemory_Block *m);
+void *memory_block_alloc(rwljMemory_Block *m, usize size, usize alignment);
+
 /*
  *  Memory Allocators
  */
@@ -473,7 +486,7 @@ typedef isize rwljArena_Kind;
 typedef struct rwljArena {
     u8 *backing_buf;
     usize total_size;
-    usize allocated_size;
+    usize used;
     rwljArena_Kind kind;
 } rwljArena;
 
@@ -1206,6 +1219,75 @@ rwlj_virtual_memory_free(void *mem, usize size)
 
 #endif
 
+rwljMemory_Block *
+rwlj_memory_block_create(usize reserve_size, usize commit_size)
+{
+    usize page_size = cast(usize) rwlj_os_get_page_size();
+    rwlj_assert(rwlj_is_pow2(page_size));
+
+    usize base_size = cast(usize)
+        rwlj_align_pow2(rwlj_size_of(rwljMemory_Block), RWLJ_DEFAULT_ALIGNMENT);
+
+    rwlj_assert(reserve_size >= commit_size);
+
+    reserve_size = cast(usize)
+        rwlj_align_pow2(rwlj_max(reserve_size, page_size), page_size);
+    commit_size = cast(usize)
+        rwlj_align_pow2(rwlj_max(commit_size, page_size), page_size);
+
+    // Memory is zeroed by default
+    u8 *buffer = rwlj_virtual_memory_reserve(reserve_size);
+    rwlj_assert(buffer != NULL);
+
+    rwljMemory_Block *m = cast(rwljMemory_Block *)
+        rwlj_virtual_memory_commit(buffer, commit_size);
+    m->used = base_size;
+    m->reserve_size = reserve_size;
+    m->committed = m->commit_size = commit_size;
+
+    return m;
+}
+
+void
+rwlj_memory_block_free(rwljMemory_Block *m)
+{
+    if (m != NULL) {
+        rwlj_virtual_memory_free(m, m->reserve_size);
+    }
+}
+
+void *
+memory_block_alloc(rwljMemory_Block *m, usize size, usize alignment)
+{
+    if (m == NULL) {
+        return NULL;
+    }
+
+    usize page_size = cast(usize) rwlj_os_get_page_size();
+    rwlj_assert(page_size >= alignment);
+
+    usize used = rwlj_align_pow2(m->used, alignment);
+    usize allocation_offset = used + size;
+    if (allocation_offset > m->reserve_size) {
+        return NULL;
+    }
+
+    if (allocation_offset > m->committed) {
+        rwlj_assert(
+            rwlj_virtual_memory_commit(
+                &(cast(u8 *) m)[m->committed], m->commit_size
+            ) != NULL
+        );
+        m->committed += m->commit_size;
+    }
+
+    void *allocation = &(cast(u8 *) m)[used];
+    rwlj_memory_zero(allocation, size);
+    m->used = allocation_offset;
+
+    return allocation;
+}
+
 /*
  *  Memory Allocators
  */
@@ -1220,7 +1302,7 @@ rwlj_arena_init(
     rwljArena_Kind kind
 )
 {
-    arena->allocated_size = 0;
+    arena->used = 0;
     arena->kind = kind;
 
     // TODO: Port this to win32 (implement virtual memory allocation layer)
@@ -1256,15 +1338,15 @@ rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment)
         return NULL;
     }
 
-    usize allocation_size = rwlj_align_pow2(size, alignment);
-    usize allocation_offset = arena->allocated_size + allocation_size;
+    usize used = rwlj_align_pow2(arena->used, alignment);
+    usize allocation_offset = used + size;
     if (allocation_offset > arena->total_size) {
         return NULL;
     }
 
-    void *allocation = &arena->backing_buf[arena->allocated_size];
-    rwlj_memory_zero(allocation, allocation_size);
-    arena->allocated_size = allocation_offset;
+    void *allocation = &arena->backing_buf[used];
+    rwlj_memory_zero(allocation, size);
+    arena->used = allocation_offset;
 
     return allocation;
 }
@@ -1286,14 +1368,14 @@ rwlj_arena_resize_aligned(
     // Out of bounds
     if (old_mem < arena->backing_buf ||
         old_mem >= &arena->backing_buf[arena->total_size] ||
-        old_size > arena->allocated_size) {
+        old_size > arena->used) {
         return NULL;
     }
 
-    usize offset = arena->allocated_size - old_size;
+    usize offset = arena->used - old_size;
     void *mem = &arena->backing_buf[offset];
     if (new_size > 0 && new_size <= arena->total_size && mem == old_mem) {
-        arena->allocated_size = arena->allocated_size + new_size - old_size;
+        arena->used = arena->used + new_size - old_size;
     }
 
     return old_mem;
@@ -1302,7 +1384,7 @@ rwlj_arena_resize_aligned(
 void
 rwlj_arena_free_all(rwljArena *arena)
 {
-    arena->allocated_size = 0;
+    arena->used = 0;
 }
 
 void
@@ -1325,13 +1407,13 @@ void
 rwlj_arena_temp_init(rwljArena_Temp *temp_arena, rwljArena *arena)
 {
     temp_arena->arena = arena;
-    temp_arena->allocated_size = temp_arena->arena->allocated_size;
+    temp_arena->allocated_size = temp_arena->arena->used;
 }
 
 void
 rwlj_arena_temp_free_all(rwljArena_Temp *temp_arena)
 {
-    temp_arena->arena->allocated_size = temp_arena->allocated_size;
+    temp_arena->arena->used = temp_arena->allocated_size;
 }
 
 /*
@@ -1360,9 +1442,9 @@ __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity)
     usize array_new_size = cast(usize) array_new_capacity * array->item_size;
 
     usize arena_new_allocated_size =
-        array->arena->allocated_size - array_curr_size + array_new_size;
+        array->arena->used - array_curr_size + array_new_size;
     if (arena_new_allocated_size > array->arena->total_size) {
-        usize rest = array->arena->total_size - array->arena->allocated_size;
+        usize rest = array->arena->total_size - array->arena->used;
         array_new_capacity =
             array->capacity + cast(isize)(rest / array->item_size);
 
