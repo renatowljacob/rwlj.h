@@ -3,9 +3,6 @@
  *  odin, the raddebugger codebase, vkrajacic's own library excerpt at BSC and
  *  Tsoding.
  *
- *  The functionality revolves around Linux because that's what I use :P
- *  although I intend to extend it to Windows and BSD as well.
- *
  *  Wouldn't recommend using it because it's for my own personal use (and the
  *  code probably sucks too), so use it at your own risk.
  */
@@ -13,20 +10,43 @@
 #ifndef RWLJ_H
 #define RWLJ_H
 
-#include <stdio.h>
-#ifdef __SSE2__
-#include <emmintrin.h>
+#if !defined(_WIN64) && !defined(__x86_64__) && !defined(_M_X64) &&            \
+    !defined(__64BIT__) && !defined(__powerpc64__) && !defined(__ppc64__)
+
+#error 32bit is not supported
+
 #endif
 
 #ifdef __linux__
+
+#define RWLJ_OS_LINUX 1
+
+#elif defined(_WIN64)
+
+#define RWLJ_OS_WINDOWS 1
+
+#else
+
+#error This operating system is not supported
+
+#endif
+
+#ifdef RWLJ_OS_LINUX
+// Linux headers
+
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
 
 #include <bits/time.h>
 #include <limits.h>
 #include <memory.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <time.h>
@@ -34,22 +54,25 @@
 
 #define _GNU_SOURCE
 
-#elif defined(_WIN64)
+#elif defined(RWLJ_OS_WINDOWS)
+// Windows headers
+
+#include <intrin.h>
+#include <malloc.h>
+#include <stdarg.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <windows.h>
 
 #endif
 
-#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64) ||               \
-    defined(__64BIT__) || defined(__powerpc64__) || defined(__ppc64__)
+// Synchronization facilities (atomic, intrinsics)
 
-#define RWLJ_ARCH_64_BIT 1
+// TODO: basic Linux/Windows IO and networking
 
-#else
-
-#define RWLJ_ARCH_32_BIT 1
-
-#endif
-
-// TODO: pthreads
+// TODO: pthreads / windows.h (?)
 
 /*
  *
@@ -62,7 +85,13 @@
  */
 
 #if defined(__clang__) || defined(__GNUC__)
+
 #define RWLJ_PRINTF_ARGS(num) __attribute__((format(printf, num, ((num) + 1))))
+
+#else
+
+#define RWLJ_PRINTF_ARGS(num)
+
 #endif
 
 #define global     static
@@ -72,9 +101,23 @@
 #define rwlj_concat(x, y)  x##y
 #define rwlj_concat_(x, y) x##_##y
 
+// TODO: Port this to win32
 #define RWLJ_STDIN  STDIN_FILENO
 #define RWLJ_STDOUT STDOUT_FILENO
 #define RWLJ_STDERR STDERR_FILENO
+
+#define RWLJ_LINE     __LINE__
+#define RWLJ_FUNCTION __func__
+#define RWLJ_FILE     __FILE__
+#define RWLJ_COUNTER  (__COUNTER__ + 1)
+
+#define rwlj_static_assert_msg(cond, msg) global u8 msg[!!(cond) ? 1 : -1]
+
+#define rwlj_static_assert(cond) rwlj_static_assert_msg(cond, static_assertion)
+
+#define rwlj_panic(msg) rwlj_static_assert_msg(false, msg)
+
+#ifdef RWLJ_OS_LINUX
 
 typedef int8_t i8;
 typedef int16_t i16;
@@ -84,10 +127,29 @@ typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
-#ifdef __SIZEOF_INT128__
-typedef __int128_t i128;
-typedef __uint128_t u128;
+
+#elif defined(RWLJ_OS_WINDOWS)
+
+typedef signed __int8 i8;
+typedef unsigned __int8 u8;
+typedef signed __int16 i16;
+typedef unsigned __int16 u16;
+typedef signed __int32 i32;
+typedef unsigned __int32 u32;
+typedef signed __int64 i64;
+typedef unsigned __int64 u64;
+
 #endif
+
+// rwlj_static_assert(sizeof(u8) == sizeof(i8));
+// rwlj_static_assert(sizeof(u16) == sizeof(i16));
+// rwlj_static_assert(sizeof(u32) == sizeof(i32));
+// rwlj_static_assert(sizeof(u64) == sizeof(i64));
+//
+// rwlj_static_assert(sizeof(u8) == 1);
+// rwlj_static_assert(sizeof(u16) == 2);
+// rwlj_static_assert(sizeof(u32) == 4);
+// rwlj_static_assert(sizeof(u64) == 8);
 
 typedef intptr_t intptr;
 typedef uintptr_t uintptr;
@@ -95,17 +157,20 @@ typedef ptrdiff_t ptrdiff;
 typedef ptrdiff isize;
 typedef size_t usize;
 
+// rwlj_static_assert(sizeof(usize) == sizeof(isize));
+
 typedef bool b8;
 typedef i16 b16;
 typedef i32 b32;
 typedef i64 b64;
 typedef isize bsize;
 
-#ifdef __SSE__
-typedef _Float16 f16;
-#endif
 typedef float f32;
 typedef double f64;
+
+// TODO: add pragma
+// rwlj_static_assert(sizeof(f32) == 4);
+// rwlj_static_assert(sizeof(f64) == 8);
 
 #define RWLJ_U8_MIN 0u
 #define RWLJ_U8_MAX 0xffu
@@ -127,9 +192,6 @@ typedef double f64;
 #define RWLJ_I64_MIN (-0x7fffffffffffffffll - 1)
 #define RWLJ_I64_MAX 0x7fffffffffffffffll
 
-#define RWLJ_F16_MAX 65504.0
-#define RWLJ_F16_MIN 6.10351562e-5
-
 #define RWLJ_F32_MAX 3.40282347e+38F
 #define RWLJ_F32_MIN 1.17549435e-38F
 
@@ -148,10 +210,36 @@ typedef double f64;
     }){ x })                                                                   \
         .b
 
+#ifdef _MSC_VER
+
+#define RWLJ_TRAP() __debugbreak()
+
+#else
+
 #define RWLJ_TRAP() __builtin_trap()
 
+#endif
+
+#define rwlj_size_of(x) (isize)(sizeof(x))
+
+#define RWLJ_WORD_SIZE rwlj_size_of(void *)
+
+#define rwlj_size_of_bits(x)      (rwlj_size_of(x) * RWLJ_WORD_SIZE)
+#define rwlj_count_of(a)          (rwlj_size_of(a) / rwlj_size_of(0 [a]))
+#define rwlj_offset_of(T, member) ((isize) & (((T *)0)->member))
+#define rwlj_align_of(T)                                                       \
+    ((isize)rwlj_offset_of(                                                    \
+        struct {                                                               \
+            char c;                                                            \
+            T member;                                                          \
+        },                                                                     \
+        member                                                                 \
+    ))
+#define rwlj_container_of(T, object, member)                                   \
+    (void *)((intptr)(object) - rwlj_offset_of(T, member))
+
 #define rwlj_no_op()     ((void)0)
-#define rwlj_unused(var) ((void)var)
+#define rwlj_unused(var) ((void)rwlj_size_of(var))
 
 #ifdef RWLJ_DISABLE_ASSERT
 #define rwlj_debug_print(...) rwlj_no_op()
@@ -203,41 +291,10 @@ typedef double f64;
     )
 #endif // RWLJ_DISABLE_ASSERT
 
-#define RWLJ_LINE     __LINE__
-#define RWLJ_FUNCTION __func__
-#define RWLJ_FILE     __FILE__
-#define RWLJ_COUNTER  (__COUNTER__ + 1)
-
-#define __rwlj_static_assert(cond, msg)                                        \
-    global u8 rwlj_concat(msg, RWLJ_LINE)[!!(cond) ? 1 : -1]
-
-#define rwlj_static_assert(cond)                                               \
-    __rwlj_static_assert(cond, static_assertion_at_line_)
-
-#define rwlj_panic(msg) __rwlj_static_assert(false, msg)
-
-#define rwlj_size_of(x) (isize)(sizeof(x))
-
-#define RWLJ_WORD_SIZE rwlj_size_of(void *)
-
-#define rwlj_size_of_bits(x)      (rwlj_size_of(x) * RWLJ_WORD_SIZE)
-#define rwlj_count_of(a)          (rwlj_size_of(a) / rwlj_size_of(0 [a]))
-#define rwlj_offset_of(T, member) ((isize) & (((T *)0)->member))
-#define rwlj_align_of(T)                                                       \
-    ((isize)rwlj_offset_of(                                                    \
-        struct {                                                               \
-            char c;                                                            \
-            T member;                                                          \
-        },                                                                     \
-        member                                                                 \
-    ))
-#define rwlj_container_of(T, object, member)                                   \
-    (void *)((intptr)(object) - rwlj_offset_of(T, member))
-
 #define rwlj_bit(n) (1ull << n)
-#define rwlj_kb(n)  (n << 10)
-#define rwlj_mb(n)  (n << 20)
-#define rwlj_gb(n)  (n << 30)
+#define rwlj_kb(n)  (cast(usize) n << 10)
+#define rwlj_mb(n)  (cast(usize) n << 20)
+#define rwlj_gb(n)  (cast(usize) n << 30)
 
 #define rwlj_swap(T, x, y)                                                     \
     do {                                                                       \
@@ -251,7 +308,7 @@ typedef double f64;
 #define rwlj_clamp(x, min, max) (rwlj_max(rwlj_min(x, max), min))
 
 #define rwlj_align_pow2(x, align) (((x) + (align) - 1) & (~((align) - 1)))
-#define rwlj_is_pow2(x)           (((x) & ((x) - 1)) == 0)
+#define rwlj_is_pow2(x)           ((x) && ((x) & ((x) - 1)) == 0)
 
 #define rwlj_is_space(c)                                                       \
     (c == ' ' || c == '\f' || c == '\n' || c == '\r' || c == '\t' || c == '\v')
@@ -266,17 +323,6 @@ typedef double f64;
     (rwlj_is_digit(c) || (rwlj_to_upper(c) >= 'A' && rwlj_to_upper(c) <= 'F'))
 
 /*
- *  Memory
- */
-
-#define rwlj_memory_compare(a, b, size)  memcmp(a, b, size)
-#define rwlj_memory_copy(dst, src, size) memcpy(dst, src, size)
-#define rwlj_memory_move(dst, src, size) memmove(dst, src, size)
-#define rwlj_memory_set(mem, byte, size) memset(mem, byte, size)
-void *rwlj_memory_swap(void *a, void *b, usize size);
-#define rwlj_memory_zero(mem, size) rwlj_memory_set(mem, 0, size)
-
-/*
  *  Math
  */
 
@@ -287,10 +333,6 @@ void *rwlj_memory_swap(void *a, void *b, usize size);
 #define rwlj_ceil(x)     (rwlj_truncate(x < 0.0f ? x : (x) + 1.0f))
 #define rwlj_round(x)                                                          \
     (x >= 0.0f ? rwlj_ceil((x) - 0.5f) : rwlj_floor((x) + 0.5f))
-
-#define RWLJ_F16_SHIFT (16 - 6)
-#define RWLJ_F16_MASK  0x1fll
-#define RWLJ_F16_BIAS  0xfll
 
 #define RWLJ_F32_SHIFT (32 - 9)
 #define RWLJ_F32_MASK  0xffll
@@ -317,6 +359,117 @@ bool rwlj_is_subnormal(f64 f);
 rwljFloat_Class rwlj_classify(f64 f);
 
 /*
+ *  Memory
+ */
+
+#define rwlj_memory_compare(a, b, size)  memcmp(a, b, size)
+#define rwlj_memory_copy(dst, src, size) memcpy(dst, src, size)
+#define rwlj_memory_move(dst, src, size) memmove(dst, src, size)
+#define rwlj_memory_set(mem, byte, size) memset(mem, byte, size)
+void *rwlj_memory_swap(void *a, void *b, usize size);
+#define rwlj_memory_zero(mem, size) rwlj_memory_set(mem, 0, size)
+
+/*
+ *  Atomics
+ */
+
+#define rwljAtomic _Atomic
+
+enum rwljMemoryOrder {
+    RWLJ_MEMORY_ORDER_RELAXED = memory_order_relaxed,
+    RWLJ_MEMORY_ORDER_CONSUME = memory_order_consume,
+    RWLJ_MEMORY_ORDER_ACQUIRE = memory_order_acquire,
+    RWLJ_MEMORY_ORDER_RELEASE = memory_order_release,
+    RWLJ_MEMORY_ORDER_ACQUIRE_RELEASE = memory_order_acq_rel,
+    RWLJ_MEMORY_ORDER_SEQUENTIALLY_CONSISTENT = memory_order_seq_cst,
+};
+typedef i32 rwljMemoryOrder;
+
+#define rwlj_atomic_init(atomic, desired) atomic_init(atomic, desired)
+
+#define rwlj_atomic_is_lock_free(atomic) atomic_is_lock_free(atomic)
+
+#define rwlj_atomic_store(atomic, desired) atomic_store(atomic, desired)
+#define rwlj_atomic_store_explicit(atomic, desired, order)                     \
+    atomic_store_explicit(atomic, desired, order)
+
+#define rwlj_atomic_load(atomic) atomic_load(atomic)
+#define rwlj_atomic_load_explicit(atomic, order)                               \
+    atomic_load_explicit(atomic, order)
+
+#define rwlj_atomic_add(atomic, var) atomic_fetch_add(atomic, var)
+#define rwlj_atomic_add_explicit(atomic, var, order)                           \
+    atomic_fetch_add_explicit(atomic, var, order)
+
+#define rwlj_atomic_sub(atomic, var) atomic_fetch_sub(atomic, var)
+#define rwlj_atomic_sub_explicit(atomic, var, order)                           \
+    atomic_fetch_sub_explicit(atomic, var, order)
+
+#define rwlj_atomic_and(atomic, var) atomic_fetch_and(atomic, var)
+#define rwlj_atomic_and_explicit(atomic, var, order)                           \
+    atomic_fetch_and_explicit(atomic, var, order)
+
+#define rwlj_atomic_or(atomic, var) atomic_fetch_or(atomic, var)
+#define rwlj_atomic_or_explicit(atomic, var, order)                            \
+    atomic_fetch_or_explicit(atomic, var, order)
+
+#define rwlj_atomic_xor(atomic, var) atomic_fetch_xor(atomic, var)
+#define rwlj_atomic_xor_explicit(atomic, var, order)                           \
+    atomic_fetch_xor_explicit(atomic, var, order)
+
+#define rwlj_atomic_exchange(atomic, desired) atomic_exchange(atomic, desired)
+#define rwlj_atomic_exchange_explicit(atomic, desired, order)                  \
+    atomic_exchange_explicit(atomic, desired, order)
+
+#define rwlj_atomic_compare_exchange_strong(atomic, expected, desired)         \
+    atomic_compare_exchange_strong(atomic, expected)
+#define rwlj_atomic_compare_exchange_strong_explicit(                          \
+    atomic, expected, desired, order_success, order_fail                       \
+)                                                                              \
+    atomic_compare_exchange_strong_explicit(                                   \
+        atomic, expected, order_success, order_fail                            \
+    )
+
+#define rwlj_atomic_compare_exchange_weak(atomic, expected, desired)           \
+    atomic_compare_exchange_weak(atomic, expected)
+#define rwlj_atomic_compare_exchange_weak_explicit(                            \
+    atomic, expected, desired, order_success, order_fail                       \
+)                                                                              \
+    atomic_compare_exchange_weak_explicit(                                     \
+        atomic, expected, order_success, order_fail                            \
+    )
+
+#define rwlj_atomic_thread_fence(order) atomic_thread_fence(order)
+
+#define rwlj_atomic_signal_fence(order) atomic_signal_fence(order)
+
+// TODO: Implement virtual memory allocation procedures
+
+/*
+ *  Virtual Memory Allocation
+ */
+
+void *rwlj_virtual_memory_reserve(usize size);
+void *rwlj_virtual_memory_commit(void *mem, usize size);
+void rwlj_virtual_memory_decommit(void *mem, usize size);
+void rwlj_virtual_memory_free(void *mem, usize size);
+
+typedef struct rwljMemory_Buffer {
+    usize reserve_size;
+    usize commit_size;
+    usize committed;
+    usize used;
+    struct rwljMemory_Buffer *prev;
+} rwljMemory_Buffer;
+#define RWLJ_MEMORY_BUFFER_HEADER rwlj_size_of(rwljMemory_Buffer)
+
+rwljMemory_Buffer *
+rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment);
+void *
+rwlj_memory_buffer_alloc(rwljMemory_Buffer *m, usize size, usize alignment);
+void rwlj_memory_buffer_free(rwljMemory_Buffer *m);
+
+/*
  *  Memory Allocators
  */
 
@@ -332,23 +485,48 @@ enum rwljArena_Kind {
 typedef isize rwljArena_Kind;
 
 typedef struct rwljArena {
-    u8 *backing_buf;
-    usize total_size;
-    usize allocated_size;
     rwljArena_Kind kind;
+    rwljMemory_Buffer *buf;
+    usize min_reserve;
+    usize min_commit;
+    usize total_used;
 } rwljArena;
 
-void
-rwlj_arena_init(rwljArena *arena, void *mem, usize size, rwljArena_Kind kind);
+// TODO: Tweak these values later
+#define RWLJ_DEFAULT_ARENA_STATIC_RESERVE_SIZE  rwlj_gb(1)
+#define RWLJ_DEFAULT_ARENA_STATIC_COMMIT_SIZE   rwlj_mb(2)
+#define RWLJ_DEFAULT_ARENA_GROWING_RESERVE_SIZE rwlj_mb(8)
+#define RWLJ_DEFAULT_ARENA_GROWING_COMMIT_SIZE  rwlj_mb(2)
 
-#define rwlj_arena_init_static(arena, size)                                    \
-    rwlj_arena_init(arena, NULL, size, RWLJ_ARENA_STATIC)
+void __rwlj_arena_init_aligned(
+    rwljArena *arena,
+    rwljArena_Kind kind,
+    usize reserve_size,
+    usize commit_size,
+    void *backing_buf,
+    usize alignment
+);
 
-#define rwlj_arena_init_growing(arena, size)                                   \
-    rwlj_arena_init(arena, NULL, size, RWLJ_ARENA_GROWING)
+#define __rwlj_arena_init(arena, kind, reserve_size, commit_size, backing_buf) \
+    __rwlj_arena_init_aligned(                                                 \
+        arena,                                                                 \
+        kind,                                                                  \
+        reserve_size,                                                          \
+        commit_size,                                                           \
+        backing_buf,                                                           \
+        RWLJ_DEFAULT_ALIGNMENT                                                 \
+    )
 
-#define rwlj_arena_init_from_buffer(arena, backing_buf, size)                  \
-    rwlj_arena_init(arena, backing_buf, size, RWLJ_ARENA_BUFFER)
+#define rwlj_arena_init(arena, kind) __rwlj_arena_init(arena, kind, 0, 0, 0)
+
+#define rwlj_arena_init_static(arena, total_size)                              \
+    __rwlj_arena_init(arena, RWLJ_ARENA_STATIC, total_size, 0, 0)
+
+#define rwlj_arena_init_growing(arena, total_size)                             \
+    __rwlj_arena_init(arena, RWLJ_ARENA_GROWING, total_size, 0, 0)
+
+#define rwlj_arena_init_from_buffer(arena, buf, total_size)                    \
+    __rwlj_arena_init(arena, RWLJ_ARENA_BUFFER, total_size, 0, buf)
 
 void *rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment);
 #define rwlj_arena_alloc(arena, size)                                          \
@@ -371,11 +549,13 @@ void rwlj_arena_destroy(rwljArena *arena);
 
 typedef struct rwljArena_Temp {
     rwljArena *arena;
-    usize allocated_size;
+    rwljMemory_Buffer *buf;
+    usize used;
+    usize total_used;
 } rwljArena_Temp;
 
-void rwlj_arena_temp_init(rwljArena_Temp *arena_temp, rwljArena *arena);
-void rwlj_arena_temp_free_all(rwljArena_Temp *arena_temp);
+rwljArena_Temp rwlj_arena_temp_begin(rwljArena *arena);
+void rwlj_arena_temp_end(rwljArena_Temp arena_temp);
 
 /*
  *  Data Structures
@@ -409,14 +589,11 @@ GENERIC_ARRAY(i16, I16);
 GENERIC_ARRAY(i32, I32);
 GENERIC_ARRAY(i64, I64);
 GENERIC_ARRAY(isize, Isize);
-GENERIC_ARRAY(i128, I128);
 GENERIC_ARRAY(u8, U8);
 GENERIC_ARRAY(u16, U16);
 GENERIC_ARRAY(u32, U32);
 GENERIC_ARRAY(u64, U64);
 GENERIC_ARRAY(usize, Usize);
-GENERIC_ARRAY(u128, U128);
-GENERIC_ARRAY(f16, F16);
 GENERIC_ARRAY(f32, F32);
 GENERIC_ARRAY(f64, F64);
 GENERIC_ARRAY(bool, Bool);
@@ -606,29 +783,6 @@ void rwlj_insertion_sort(
 );
 
 /*
- *  Time
- */
-
-typedef long rwljDuration;
-typedef long rwljTime;
-
-#define RWLJ_TIME_NANOSECOND  (1ll)
-#define RWLJ_TIME_MICROSECOND (1ll * 1000ll)
-#define RWLJ_TIME_MILLISECOND (1000ll * 1000ll)
-#define RWLJ_TIME_SECOND      (1000000ll * 1000ll)
-#define RWLJ_TIME_MINUTE      (1000000000ll * 60ll)
-#define RWLJ_TIME_HOUR        (60000000000ll * 60ll)
-#define RWLJ_TIME_DAY         (3600000000000ll * 24ll)
-
-rwljTime rwlj_time_now(void);
-rwljDuration rwlj_time_diff(rwljTime t1, rwljTime t2);
-rwljDuration rwlj_time_since(rwljTime time);
-i64 rwlj_time_unix_now(void);
-i64 rwlj_time_unix_diff(i64 t1, i64 t2);
-i64 rwlj_time_unix_since(i64 time);
-rwljDuration rwlj_time_sleep(rwljDuration time);
-
-/*
  *  Strings
  */
 
@@ -652,7 +806,7 @@ GENERIC_ARRAY(rwljString, String);
 #define rwlj_string_from_slice(slice) rwlj_string(slice, 0, (slice)->len)
 
 // rwljString procedures
-isize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
+bsize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
 #define rwlj_string_compare(a, b)             __rwlj_string_compare(a, b, true)
 #define rwlj_string_compare_insensitive(a, b) __rwlj_string_compare(a, b, false)
 
@@ -775,6 +929,37 @@ rwljString rwlj_sbprintf(rwljString_Builder *sb, char const *fmt, ...);
 rwljString rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...);
 rwljString rwlj_sbprint(rwljString_Builder *sb, rwljString s);
 rwljString rwlj_sbprintln(rwljString_Builder *sb, rwljString s);
+
+/*
+ *  Time
+ */
+
+// TODO: Port this to win32
+
+typedef long rwljDuration;
+typedef long rwljTime;
+
+#define RWLJ_TIME_NANOSECOND  (1ll)
+#define RWLJ_TIME_MICROSECOND (1ll * 1000ll)
+#define RWLJ_TIME_MILLISECOND (1000ll * 1000ll)
+#define RWLJ_TIME_SECOND      (1000000ll * 1000ll)
+#define RWLJ_TIME_MINUTE      (1000000000ll * 60ll)
+#define RWLJ_TIME_HOUR        (60000000000ll * 60ll)
+#define RWLJ_TIME_DAY         (3600000000000ll * 24ll)
+
+rwljTime rwlj_time_now(void);
+rwljDuration rwlj_time_diff(rwljTime t1, rwljTime t2);
+rwljDuration rwlj_time_since(rwljTime time);
+i64 rwlj_time_unix_now(void);
+i64 rwlj_time_unix_diff(i64 t1, i64 t2);
+i64 rwlj_time_unix_since(i64 time);
+rwljDuration rwlj_time_sleep(rwljDuration time);
+
+/*
+ *  Platform Abstraction
+ */
+
+usize rwlj_os_get_page_size(void);
 
 #endif // RWLJ_H
 
@@ -976,62 +1161,300 @@ rwlj_insertion_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
 }
 
 /*
+ *  Virtual Memory Allocation
+ */
+
+#ifdef RWLJ_OS_LINUX
+
+void *
+rwlj_virtual_memory_reserve(usize size)
+{
+    void *allocation =
+        mmap(NULL, size, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    rwlj_assert(
+        allocation != NULL &&
+        rwlj_align_pow2(cast(intptr) allocation, RWLJ_DEFAULT_ALIGNMENT)
+    );
+
+    return allocation;
+}
+
+void *
+rwlj_virtual_memory_commit(void *mem, usize size)
+{
+    rwlj_assert(
+        mem != NULL && rwlj_align_pow2(cast(intptr) mem, RWLJ_DEFAULT_ALIGNMENT)
+    );
+    mprotect(mem, size, PROT_READ | PROT_WRITE);
+
+    return mem;
+}
+
+void
+rwlj_virtual_memory_decommit(void *mem, usize size)
+{
+    mprotect(mem, size, PROT_NONE);
+
+    // NOTE: Revisit (MADV_FREE||MADV_DONTNEET) in the future
+    // If I keep using only arenas, dontneed is fine
+    madvise(mem, size, MADV_FREE);
+}
+
+void
+rwlj_virtual_memory_free(void *mem, usize size)
+{
+    munmap(mem, size);
+}
+
+#elif defined(RWLJ_OS_WINDOWS)
+
+void *
+rwlj_virtual_memory_reserve(usize size)
+{
+    void *allocation = VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_READWRITE);
+    rwlj_assert(
+        allocation != NULL &&
+        rwlj_align_pow2(cast(intptr) allocation, RWLJ_DEFAULT_ALIGNMENT)
+    );
+
+    return allocation;
+}
+
+void *
+rwlj_virtual_memory_commit(void *mem, usize size)
+{
+    void *allocation = VirtualAlloc(mem, size, MEM_COMMIT, PAGE_READWRITE);
+    rwlj_assert(
+        allocation != NULL &&
+        rwlj_align_pow2(cast(intptr) allocation, RWLJ_DEFAULT_ALIGNMENT)
+    );
+
+    return allocation;
+}
+
+void
+rwlj_virtual_memory_decommit(void *mem, usize size)
+{
+    VirtualFree(mem, size, MEM_DECOMMIT);
+}
+
+void
+rwlj_virtual_memory_free(void *mem, usize size)
+{
+    rwlj_unused(size);
+    VirtualFree(mem, 0, MEM_RELEASE);
+}
+
+#endif
+
+rwljMemory_Buffer *
+rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment)
+{
+    rwlj_assert(reserve_size != 0 && commit_size != 0);
+    rwlj_assert(alignment <= commit_size);
+
+    usize page_size = rwlj_os_get_page_size();
+    reserve_size =
+        rwlj_max(rwlj_align_pow2(reserve_size, page_size), page_size);
+    commit_size =
+        rwlj_min(rwlj_align_pow2(commit_size, page_size), reserve_size);
+
+    void *mem = rwlj_virtual_memory_reserve(reserve_size);
+    rwlj_virtual_memory_commit(mem, commit_size);
+
+    rwljMemory_Buffer *buf = mem;
+    buf->reserve_size = reserve_size;
+    buf->commit_size = commit_size;
+    buf->committed = buf->commit_size;
+    buf->used =
+        cast(usize) rwlj_align_pow2(RWLJ_MEMORY_BUFFER_HEADER, alignment);
+
+    return buf;
+}
+
+void
+rwlj_memory_buffer_free(rwljMemory_Buffer *m)
+{
+    if (m != NULL) {
+        rwlj_virtual_memory_free(m, m->reserve_size);
+    }
+}
+
+void *
+rwlj_memory_buffer_alloc(rwljMemory_Buffer *m, usize size, usize alignment)
+{
+    rwlj_assert(m != NULL);
+
+    if (size == 0) {
+        return NULL;
+    }
+
+    u8 *mem = cast(u8 *) m;
+    usize offset = rwlj_align_pow2(m->used, alignment);
+    usize new_offset = offset + size;
+    if (new_offset > m->reserve_size) {
+        return NULL;
+    }
+
+    if (new_offset > m->committed) {
+        usize commit_size = rwlj_min(
+            rwlj_align_pow2(size, m->commit_size),
+            m->reserve_size - m->committed
+        );
+        if (commit_size) {
+            rwlj_virtual_memory_commit(&mem[m->committed], commit_size);
+            m->committed += commit_size;
+        }
+    }
+    m->used = new_offset;
+
+    return &mem[offset];
+}
+
+/*
  *  Memory Allocators
  */
 
 /* arena */
 
 void
-rwlj_arena_init(
+__rwlj_arena_init_aligned(
     rwljArena *arena,
+    rwljArena_Kind kind,
+    usize reserve_size,
+    usize commit_size,
     void *backing_buf,
-    usize size,
-    rwljArena_Kind kind
+    usize alignment
 )
 {
-    arena->allocated_size = 0;
-    arena->kind = kind;
+    rwlj_assert(arena != NULL);
+    rwlj_assert(commit_size == 0 || alignment <= commit_size);
 
-    switch (cast(enum rwljArena_Kind) arena->kind) {
-    case RWLJ_ARENA_STATIC:
-        arena->total_size = size != 0 ? size : rwlj_kb(1);
-        arena->backing_buf = malloc(arena->total_size);
-        break;
-    case RWLJ_ARENA_GROWING:
-        arena->total_size = size != 0 ? size : rwlj_kb(8);
-        arena->backing_buf = mmap(
-            NULL,
-            arena->total_size,
-            PROT_READ | PROT_WRITE,
-            MAP_PRIVATE | MAP_ANON,
-            -1,
-            0
-        );
-        break;
-    case RWLJ_ARENA_BUFFER:
-        arena->total_size = size;
-        arena->backing_buf = backing_buf;
+    switch (cast(enum rwljArena_Kind) kind) {
+    case RWLJ_ARENA_STATIC: {
+        if (reserve_size == 0) {
+            reserve_size = RWLJ_DEFAULT_ARENA_STATIC_RESERVE_SIZE;
+        }
+        if (commit_size == 0) {
+            commit_size = RWLJ_DEFAULT_ARENA_STATIC_COMMIT_SIZE;
+        }
+
+        arena->kind = kind;
+        arena->buf =
+            rwlj_memory_buffer_new(reserve_size, commit_size, alignment);
+        arena->min_commit = arena->buf->commit_size;
+        arena->total_used = arena->buf->used;
+        arena->min_reserve = arena->buf->reserve_size;
+
         break;
     }
-    rwlj_assert(arena->backing_buf != NULL);
+    case RWLJ_ARENA_GROWING: {
+        if (reserve_size == 0) {
+            reserve_size = RWLJ_DEFAULT_ARENA_GROWING_RESERVE_SIZE;
+        }
+        if (commit_size == 0) {
+            commit_size = RWLJ_DEFAULT_ARENA_GROWING_COMMIT_SIZE;
+        }
+
+        arena->kind = kind;
+        arena->buf =
+            rwlj_memory_buffer_new(reserve_size, commit_size, alignment);
+        arena->min_commit = arena->buf->commit_size;
+        arena->total_used = arena->buf->used;
+        arena->min_reserve = arena->buf->reserve_size;
+
+        break;
+    }
+    case RWLJ_ARENA_BUFFER: {
+        rwlj_assert(backing_buf != NULL);
+
+        arena->kind = kind;
+        arena->buf = backing_buf;
+        arena->buf->used = arena->total_used = RWLJ_MEMORY_BUFFER_HEADER;
+        arena->buf->reserve_size = arena->min_reserve = reserve_size;
+        arena->buf->commit_size = arena->min_commit = reserve_size;
+        arena->buf->committed = arena->min_commit;
+        arena->buf->prev = NULL;
+
+        break;
+    }
+    default: {
+        rwlj_assert_fail("invalid Arena_Kind: %ld", kind);
+    }
+    }
 }
 
 void *
 rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment)
 {
+    rwlj_assert(arena != NULL);
+    rwlj_assert(alignment <= arena->min_commit);
+
     if (size == 0) {
         return NULL;
     }
 
-    usize allocation_size = rwlj_align_pow2(size, alignment);
-    usize allocation_offset = arena->allocated_size + allocation_size;
-    if (allocation_offset > arena->total_size) {
-        return NULL;
-    }
+    usize used = arena->buf->used;
+    void *allocation = rwlj_memory_buffer_alloc(arena->buf, size, alignment);
+    switch (cast(enum rwljArena_Kind) arena->kind) {
+    case RWLJ_ARENA_STATIC: {
+        if (allocation != NULL) {
+            arena->total_used = arena->buf->used;
+        }
 
-    void *allocation = &arena->backing_buf[arena->allocated_size];
-    rwlj_memory_zero(allocation, allocation_size);
-    arena->allocated_size = allocation_offset;
+        break;
+    }
+    case RWLJ_ARENA_GROWING: {
+        if (allocation == NULL) {
+            usize reserve_size = arena->min_reserve;
+            usize commit_size = arena->min_commit;
+            usize page_size = rwlj_os_get_page_size();
+            if (size > reserve_size) {
+                reserve_size = rwlj_align_pow2(
+                    size + RWLJ_MEMORY_BUFFER_HEADER, page_size
+                );
+                commit_size = reserve_size;
+            } else if (size > commit_size) {
+                commit_size = rwlj_align_pow2(size, page_size);
+            }
+
+            rwljMemory_Buffer *new_mem_block =
+                rwlj_memory_buffer_new(reserve_size, commit_size, alignment);
+            if (new_mem_block == NULL) {
+                break;
+            }
+            new_mem_block->prev = arena->buf;
+            arena->buf = new_mem_block;
+
+            allocation = rwlj_memory_buffer_alloc(arena->buf, size, alignment);
+            if (allocation == NULL) {
+                break;
+            }
+            used = arena->buf->used;
+        } else {
+            if (used > arena->buf->used) {
+                used = used - arena->buf->used;
+            } else {
+                used = arena->buf->used - used;
+            }
+        }
+        arena->total_used += used;
+
+        break;
+    }
+    case RWLJ_ARENA_BUFFER: {
+        if (allocation != NULL) {
+            arena->total_used = arena->buf->used;
+        }
+
+        break;
+    }
+    default: {
+        rwlj_assert_fail("Invalid rwljArena_Kind");
+
+        break;
+    }
+    }
 
     return allocation;
 }
@@ -1045,23 +1468,51 @@ rwlj_arena_resize_aligned(
     usize alignment
 )
 {
-    u8 *old_mem = old_memory;
-    if (old_mem == NULL || old_size == 0) {
+    rwlj_assert(arena != NULL);
+    rwlj_assert(alignment <= arena->min_commit);
+
+    if (old_memory == NULL || old_size == 0) {
         return rwlj_arena_alloc_aligned(arena, new_size, alignment);
     }
 
-    // Out of bounds
-    if (old_mem < arena->backing_buf ||
-        old_mem >= &arena->backing_buf[arena->total_size] ||
-        old_size > arena->allocated_size) {
+    if (old_size == new_size) {
+        return old_memory;
+    }
+
+    // Sanity check
+    if (new_size == 0 ||
+        arena->buf->used - RWLJ_MEMORY_BUFFER_HEADER < old_size) {
         return NULL;
     }
 
-    usize offset = arena->allocated_size - old_size;
-    void *mem = &arena->backing_buf[offset];
-    if (new_size > 0 && new_size <= arena->total_size && mem == old_mem) {
-        arena->allocated_size = arena->allocated_size + new_size - old_size;
+    u8 *old_mem = old_memory;
+    u8 *mem = cast(u8 *) arena->buf;
+    usize offset = arena->buf->used - old_size;
+
+    // Out of bounds
+    if (old_mem < mem || old_mem >= &mem[arena->buf->reserve_size] ||
+        old_mem != &mem[offset] || old_size > arena->buf->reserve_size) {
+        return NULL;
     }
+
+    if (offset + new_size > arena->buf->reserve_size) {
+        return rwlj_arena_alloc_aligned(arena, new_size, alignment);
+    }
+
+    usize committed = arena->buf->committed;
+    if (offset + new_size > committed) {
+        usize commit_size = rwlj_min(
+            rwlj_align_pow2(new_size - old_size, arena->min_commit),
+            arena->buf->reserve_size - committed
+        );
+        if (commit_size) {
+            rwlj_virtual_memory_commit(&mem[committed], commit_size);
+            arena->buf->committed += commit_size;
+        }
+    }
+
+    arena->buf->used = arena->buf->used + new_size - old_size;
+    arena->total_used = arena->total_used + new_size - old_size;
 
     return old_mem;
 }
@@ -1069,36 +1520,89 @@ rwlj_arena_resize_aligned(
 void
 rwlj_arena_free_all(rwljArena *arena)
 {
-    arena->allocated_size = 0;
+    rwlj_assert(arena != NULL);
+
+    rwljMemory_Buffer *buf = arena->buf;
+    if (buf == NULL) {
+        return;
+    }
+
+    if (arena->kind != RWLJ_ARENA_BUFFER) {
+        while (buf != NULL && buf->prev != NULL) {
+            rwljMemory_Buffer *freed = buf;
+            buf = buf->prev;
+            rwlj_memory_buffer_free(freed);
+        }
+
+        u8 *mem = cast(u8 *) buf;
+        rwlj_virtual_memory_decommit(
+            &mem[arena->min_commit], buf->committed - arena->min_commit
+        );
+        buf->committed = buf->commit_size = arena->min_commit;
+        arena->buf = buf;
+    }
+
+    arena->total_used = buf->used = RWLJ_MEMORY_BUFFER_HEADER;
 }
 
 void
 rwlj_arena_destroy(rwljArena *arena)
 {
-    switch (cast(enum rwljArena_Kind) arena->kind) {
-    case RWLJ_ARENA_STATIC:
-        free(arena->backing_buf);
-        break;
-    case RWLJ_ARENA_GROWING:
-        munmap(arena->backing_buf, arena->total_size);
-        break;
-    case RWLJ_ARENA_BUFFER:
-        rwlj_no_op();
+    rwlj_assert(arena != NULL);
+
+    if (arena->kind != RWLJ_ARENA_BUFFER) {
+        rwlj_arena_free_all(arena);
+        rwlj_memory_buffer_free(arena->buf);
+        arena->buf = NULL;
+    }
+
+    arena->kind = -1;
+    arena->min_reserve = arena->min_commit = arena->total_used = 0;
+}
+
+rwljArena_Temp
+rwlj_arena_temp_begin(rwljArena *arena)
+{
+    rwlj_assert(arena != NULL);
+
+    return (rwljArena_Temp){
+        .arena = arena,
+        .buf = arena->buf,
+        .used = arena->buf->used,
+        .total_used = arena->total_used,
+    };
+}
+
+void
+rwlj_arena_temp_end(rwljArena_Temp temp_arena)
+{
+    rwlj_assert(temp_arena.arena != NULL);
+
+    rwljMemory_Buffer *buf = temp_arena.arena->buf;
+    if (buf == NULL || buf->prev == NULL) {
         return;
     }
-}
 
-void
-rwlj_arena_temp_init(rwljArena_Temp *temp_arena, rwljArena *arena)
-{
-    temp_arena->arena = arena;
-    temp_arena->allocated_size = temp_arena->arena->allocated_size;
-}
+    bool found = false;
+    while (buf != NULL && buf->prev != NULL) {
+        if (buf == temp_arena.buf) {
+            found = true;
 
-void
-rwlj_arena_temp_free_all(rwljArena_Temp *temp_arena)
-{
-    temp_arena->arena->allocated_size = temp_arena->allocated_size;
+            break;
+        }
+
+        rwljMemory_Buffer *freed = buf;
+        buf = buf->prev;
+        rwlj_memory_buffer_free(freed);
+    }
+
+    if (!found) {
+        return;
+    }
+
+    buf->used = temp_arena.used;
+    temp_arena.arena->total_used = temp_arena.total_used;
+    temp_arena.arena->buf = buf;
 }
 
 /*
@@ -1126,10 +1630,10 @@ __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity)
     isize array_new_capacity = new_capacity;
     usize array_new_size = cast(usize) array_new_capacity * array->item_size;
 
-    usize arena_new_allocated_size =
-        array->arena->allocated_size - array_curr_size + array_new_size;
-    if (arena_new_allocated_size > array->arena->total_size) {
-        usize rest = array->arena->total_size - array->arena->allocated_size;
+    rwljMemory_Buffer *buf = array->arena->buf;
+    usize arena_new_used_size = buf->used - array_curr_size + array_new_size;
+    if (arena_new_used_size > buf->reserve_size) {
+        usize rest = buf->reserve_size - buf->used;
         array_new_capacity =
             array->capacity + cast(isize)(rest / array->item_size);
 
@@ -1156,90 +1660,11 @@ __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity)
 }
 
 /*
- *  Time
- */
-
-rwljTime
-rwlj_time_now(void)
-{
-    i32 id = 0;
-
-#if defined(CLOCK_MONOTONIC_RAW)
-    id = CLOCK_MONOTONIC_RAW;
-#elif defined(CLOCK_MONOTONIC)
-    id = CLOCK_MONOTONIC;
-#else
-    rwlj_panic(no_monotonic_clock);
-#endif
-
-    struct timespec timespec = { 0 };
-    if (clock_gettime(id, &timespec) == 0) {
-        return timespec.tv_sec * RWLJ_TIME_SECOND + timespec.tv_nsec;
-    }
-
-    return 0;
-}
-
-rwljDuration
-rwlj_time_diff(rwljTime t1, rwljTime t2)
-{
-    return t1 - t2;
-}
-
-rwljDuration
-rwlj_time_since(rwljTime t)
-{
-    return rwlj_time_diff(rwlj_time_now(), t);
-}
-
-i64
-rwlj_time_unix_now(void)
-{
-    struct timespec timespec = { 0 };
-    if (clock_gettime(CLOCK_REALTIME, &timespec) == 0) {
-        return timespec.tv_sec;
-    }
-
-    return 0;
-}
-
-rwljDuration
-rwlj_time_unix_diff(i64 t1, i64 t2)
-{
-    return t1 - t2;
-}
-
-rwljDuration
-rwlj_time_unix_since(i64 t)
-{
-    return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
-}
-
-rwljDuration
-rwlj_time_sleep(rwljDuration time)
-{
-    if (time <= 0) {
-        return 0;
-    }
-
-    rwljDuration seconds = time / RWLJ_TIME_SECOND;
-    rwljDuration nano = time % RWLJ_TIME_SECOND;
-
-    struct timespec timespec = { seconds, nano };
-    struct timespec remaining = { 0 };
-    if (clock_nanosleep(CLOCK_MONOTONIC, 0, &timespec, &remaining) == 0) {
-        return 0;
-    }
-
-    return remaining.tv_sec * RWLJ_TIME_SECOND + remaining.tv_nsec;
-}
-
-/*
  *  Strings
  */
 
 #define RWLJ_STRING_COMPARE_SENTINEL cast(isize) rwlj_bit(8)
-isize
+bsize
 __rwlj_string_compare(rwljString a, rwljString b, bool sensitive)
 {
     if (a.len <= 0 || b.len <= 0) {
@@ -3038,10 +3463,10 @@ __rwlj_bprintf_va(
         if (state.flags.minus) {
             isize diff = state.field_width - conv_bytes_written;
             if (diff > 0) {
-                usize bytes_to_copy =
+                usize _bytes_to_copy =
                     cast(usize) rwlj_min(diff, buf.len - bytes_written);
-                rwlj_memory_set(&buf.data[bytes_written], ' ', bytes_to_copy);
-                bytes_written += cast(isize) bytes_to_copy;
+                rwlj_memory_set(&buf.data[bytes_written], ' ', _bytes_to_copy);
+                bytes_written += cast(isize) _bytes_to_copy;
             }
         }
     }
@@ -3377,6 +3802,115 @@ rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
 }
 
 /*
+ *  Time
+ */
+
+rwljTime
+rwlj_time_now(void)
+{
+    i32 id = 0;
+
+#if defined(CLOCK_MONOTONIC_RAW)
+    id = CLOCK_MONOTONIC_RAW;
+#elif defined(CLOCK_MONOTONIC)
+    id = CLOCK_MONOTONIC;
+#else
+    rwlj_panic(no_monotonic_clock);
+#endif
+
+    struct timespec timespec = { 0 };
+    if (clock_gettime(id, &timespec) == 0) {
+        return timespec.tv_sec * RWLJ_TIME_SECOND + timespec.tv_nsec;
+    }
+
+    return 0;
+}
+
+rwljDuration
+rwlj_time_diff(rwljTime t1, rwljTime t2)
+{
+    return t1 - t2;
+}
+
+rwljDuration
+rwlj_time_since(rwljTime t)
+{
+    return rwlj_time_diff(rwlj_time_now(), t);
+}
+
+i64
+rwlj_time_unix_now(void)
+{
+    struct timespec timespec = { 0 };
+    if (clock_gettime(CLOCK_REALTIME, &timespec) == 0) {
+        return timespec.tv_sec;
+    }
+
+    return 0;
+}
+
+rwljDuration
+rwlj_time_unix_diff(i64 t1, i64 t2)
+{
+    return t1 - t2;
+}
+
+rwljDuration
+rwlj_time_unix_since(i64 t)
+{
+    return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
+}
+
+rwljDuration
+rwlj_time_sleep(rwljDuration time)
+{
+    if (time <= 0) {
+        return 0;
+    }
+
+    rwljDuration seconds = time / RWLJ_TIME_SECOND;
+    rwljDuration nano = time % RWLJ_TIME_SECOND;
+
+    struct timespec timespec = { seconds, nano };
+    struct timespec remaining = { 0 };
+    if (clock_nanosleep(CLOCK_MONOTONIC, 0, &timespec, &remaining) == 0) {
+        return 0;
+    }
+
+    return remaining.tv_sec * RWLJ_TIME_SECOND + remaining.tv_nsec;
+}
+
+/*
+ *  Platform Abstraction
+ */
+
+#ifdef RWLJ_OS_LINUX
+
+usize
+rwlj_os_get_page_size(void)
+{
+    isize page_size = sysconf(_SC_PAGESIZE);
+    rwlj_assert(page_size > 0 && rwlj_is_pow2(page_size));
+
+    return cast(usize) page_size;
+}
+
+#elif RWLJ_OS_WINDOWS
+
+usize
+rwlj_os_get_page_size(void)
+{
+    SYSTEM_INFO sysinfo = { 0 };
+    GetSystemInfo(&sysinfo);
+    usize page_size = sysinfo.dwPageSize;
+    rwlj_assert(page_size > 0 && rwlj_is_pow2(page_size));
+
+    return page_size;
+}
+
+#endif
+
+/*
  *  Testing
  */
 
@@ -3421,112 +3955,118 @@ rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
 // aliases)
 bool
 __rwlj_testing_expect_value_i64(
-    i64 a,
-    i64 b,
+    i64 value,
+    i64 expected,
     char const *file,
     int line,
     char const *proc
 )
 {
-    if (a != b) {
+    if (value != expected) {
         rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
-        rwlj_printfln("Expected %ld, got %ld", b, a);
+        rwlj_printfln("Expected %ld, got %ld", expected, value);
         return false;
     }
 
     return true;
 }
 
-#define rwlj_testing_expect_value_i64(a, b)                                    \
-    __rwlj_testing_expect_value_i64(a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
+#define rwlj_testing_expect_value_i64(value, expected)                         \
+    __rwlj_testing_expect_value_i64(                                           \
+        value, expected, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                   \
+    )
 
 bool
 __rwlj_testing_expect_value_u64(
-    u64 a,
-    u64 b,
+    u64 value,
+    u64 expected,
     char const *file,
     int line,
     char const *proc
 )
 {
-    if (a != b) {
+    if (value != expected) {
         rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
-        rwlj_printfln("Expected %lu, got %lu", b, a);
+        rwlj_printfln("Expected %lu, got %lu", expected, value);
         return false;
     }
 
     return true;
 }
 
-#define rwlj_testing_expect_value_u64(a, b)                                    \
-    __rwlj_testing_expect_value_u64(a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
+#define rwlj_testing_expect_value_u64(value, expected)                         \
+    __rwlj_testing_expect_value_u64(                                           \
+        value, expected, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                   \
+    )
 
 bool
 __rwlj_testing_expect_value_f64(
-    f64 a,
-    f64 b,
+    f64 value,
+    f64 expected,
     char const *file,
     int line,
     char const *proc
 )
 {
-    if (a != b) {
+    if (value != expected) {
         rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
-        rwlj_printfln("Expected %f, got %f", b, a);
+        rwlj_printfln("Expected %f, got %f", expected, value);
         return false;
     }
 
     return true;
 }
 
-#define rwlj_testing_expect_value_f64(a, b)                                    \
-    __rwlj_testing_expect_value_f64(a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION)
+#define rwlj_testing_expect_value_f64(value, expected)                         \
+    __rwlj_testing_expect_value_f64(                                           \
+        value, expected, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                   \
+    )
 
 bool
 __rwlj_testing_expect_value_string(
-    rwljString a,
-    rwljString b,
+    rwljString value,
+    rwljString expected,
     char const *file,
     int line,
     char const *proc
 )
 {
-    if (!rwlj_string_are_equal(a, b)) {
+    if (!rwlj_string_are_equal(value, expected)) {
         rwlj_printf("\t[%s:%d:%s()]: ", file, line, proc);
-        rwlj_printfln("Expected %S, got %S", b, a);
+        rwlj_printfln("Expected %S, got %S", expected, value);
         return false;
     }
 
     return true;
 }
 
-#define rwlj_testing_expect_value_string(a, b)                                 \
+#define rwlj_testing_expect_value_string(value, expected)                      \
     __rwlj_testing_expect_value_string(                                        \
-        a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                              \
+        value, expected, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                   \
     )
 
-#define rwlj_testing_expect_value_symbol(a, b)                                 \
+#define rwlj_testing_expect_value_symbol(value, expected)                      \
     do {                                                                       \
-        if (a != b) {                                                          \
-            rwlj_testing_printf("Expected %s, got %s", #b, #a);                \
+        if (value != expected) {                                               \
+            rwlj_testing_printf("Expected %s, got %s", #expected, #value);     \
             success = false;                                                   \
         }                                                                      \
     } while (false)
 
 // clang-format off
-#define __rwlj_testing_expect_value(a, b, file, line, proc)                    \
-    _Generic((a),                                                              \
+#define __rwlj_testing_expect_value(value, expected, file, line, proc)                    \
+    _Generic((value),                                                              \
     i64: __rwlj_testing_expect_value_i64,                                      \
     u64: __rwlj_testing_expect_value_u64,                                      \
     f64: __rwlj_testing_expect_value_f64,                                      \
     rwljString: __rwlj_testing_expect_value_string                             \
-)(a, b, file, line, proc)
+)(value, expected, file, line, proc)
 // clang-format on
 
-#define rwlj_testing_expect_value(a, b)                                        \
+#define rwlj_testing_expect_value(value, expected)                             \
     do {                                                                       \
         if (!__rwlj_testing_expect_value(                                      \
-                a, b, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION                      \
+                value, expected, RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION           \
             )) {                                                               \
             success = false;                                                   \
         }                                                                      \

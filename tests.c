@@ -98,146 +98,502 @@ test_arena(void)
 {
     DESCRIBE("rwljArena tests");
 
-    TEST("Sets growing arena")
+    usize base = cast(usize) rwlj_align_pow2(
+        RWLJ_MEMORY_BUFFER_HEADER,
+        rwlj_max(RWLJ_DEFAULT_ALIGNMENT, rwlj_align_of(rwljMemory_Buffer))
+    );
+
+    TEST("Default static arena")
     {
         rwljArena arena = { 0 };
-        usize arena_total_size = rwlj_mb(8);
-        rwlj_arena_init_growing(&arena, arena_total_size);
+        rwlj_arena_init(&arena, RWLJ_ARENA_STATIC);
 
-        rwlj_testing_expect(arena.backing_buf != NULL);
-        rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_GROWING);
-        rwlj_testing_expect_value(arena.total_size, arena_total_size);
+        usize reserve_size = RWLJ_DEFAULT_ARENA_STATIC_RESERVE_SIZE;
+        usize commit_size = RWLJ_DEFAULT_ARENA_STATIC_COMMIT_SIZE;
 
-        rwlj_arena_destroy(&arena);
-    }
-
-    TEST("Sets static arena")
-    {
-        rwljArena arena = { 0 };
-        usize arena_total_size = rwlj_mb(1);
-        rwlj_arena_init_static(&arena, arena_total_size);
-
-        rwlj_testing_expect(arena.backing_buf != NULL);
         rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_STATIC);
-        rwlj_testing_expect_value(arena.total_size, arena_total_size);
+        rwlj_testing_expect(arena.buf != NULL);
+        rwlj_testing_expect_value(arena.total_used, base);
+        rwlj_testing_expect_value(arena.min_reserve, reserve_size);
+        rwlj_testing_expect_value(arena.min_commit, commit_size);
+        rwlj_testing_expect_value(arena.buf->reserve_size, reserve_size);
+        rwlj_testing_expect_value(arena.buf->commit_size, commit_size);
+        rwlj_testing_expect_value(arena.buf->used, base);
 
         rwlj_arena_destroy(&arena);
     }
 
-    TEST("Sets buffer arena")
+    TEST("Default growing arena")
     {
-#define ARENA_TOTAL_SIZE rwlj_mb(1)
-        u8 buf[ARENA_TOTAL_SIZE] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+        rwlj_arena_init(&arena, RWLJ_ARENA_GROWING);
 
-        rwlj_testing_expect(arena.backing_buf != NULL);
-        rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_BUFFER);
-        rwlj_testing_expect_value(arena.total_size, ARENA_TOTAL_SIZE);
-#undef ARENA_TOTAL_SIZE
+        usize reserve_size = RWLJ_DEFAULT_ARENA_GROWING_RESERVE_SIZE;
+        usize commit_size = RWLJ_DEFAULT_ARENA_GROWING_COMMIT_SIZE;
+
+        rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_GROWING);
+        rwlj_testing_expect(arena.buf != NULL);
+        rwlj_testing_expect_value(arena.buf->reserve_size, reserve_size);
+        rwlj_testing_expect_value(arena.buf->commit_size, commit_size);
+
+        rwlj_arena_destroy(&arena);
     }
 
-    TEST("Allocates all memory")
+    TEST("Static Arena")
     {
-        u8 buf[rwlj_mb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+        usize reserve_size = rwlj_mb(16);
+        usize commit_size = rwlj_mb(2);
 
-        u8 *allocation = rwlj_arena_alloc(&arena, arena.total_size);
+        rwlj_arena_init_static(&arena, reserve_size);
+        usize used = base;
+        usize committed = commit_size;
 
-        rwlj_testing_expect(allocation != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
-    }
+        // Setup
+        {
+            rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_STATIC);
+            rwlj_testing_expect(arena.buf != NULL);
+            rwlj_testing_expect_value(arena.buf->reserve_size, reserve_size);
+            rwlj_testing_expect_value(arena.buf->commit_size, commit_size);
+            rwlj_testing_expect_value(arena.min_reserve, reserve_size);
+            rwlj_testing_expect_value(arena.min_commit, commit_size);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+        }
 
-    TEST("Allocates no memory")
-    {
-        u8 buf[rwlj_kb(1)] = { 0 };
-        rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+        // 2/16MB - arena_alloc()
+        {
+            usize n = 8;
+            usize total_size = rwlj_mb(2);
+            rwlj_assert(total_size % n == 0);
+            usize alloc_size = total_size / n;
 
-        u8 *allocation = rwlj_arena_alloc(&arena, 0);
+            for (isize i = 1; i <= n; i += 1) {
+                void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+                used += alloc_size;
 
-        rwlj_testing_expect(allocation == NULL);
-        rwlj_testing_expect_value(arena.allocated_size, 0);
-    }
-
-    TEST("Arbitrarily allocates memory")
-    {
-        u8 buf[rwlj_kb(1)] = { 0 };
-        rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
-
-        usize allocation_num = 8;
-        usize total_allocation_size = rwlj_count_of(buf) / allocation_num;
-        for (usize i = 0; i < allocation_num * 2; i += 1) {
-            u8 *allocation = rwlj_arena_alloc(&arena, total_allocation_size);
-            usize iter_allocation_size = total_allocation_size * (i + 1);
-
-            if (i < allocation_num) {
-                rwlj_testing_expect(allocation != NULL);
-                rwlj_testing_expect_value(
-                    arena.allocated_size, iter_allocation_size
-                );
-            } else {
-                rwlj_testing_expect(allocation == NULL);
-                rwlj_testing_expect_value(
-                    arena.allocated_size, arena.total_size
-                );
+                rwlj_testing_expect(alloc != NULL);
+                rwlj_testing_expect_value(arena.buf->used, used);
+                rwlj_testing_expect_value(arena.total_used, used);
             }
+            committed += commit_size;
+
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+        }
+
+        // 4/16MB - arena_alloc()
+        usize old_size = 0;
+        void *old_alloc = NULL;
+        {
+            usize alloc_size = rwlj_mb(2);
+            void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+
+            committed += commit_size;
+            used += alloc_size;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+
+            old_size = alloc_size;
+            old_alloc = alloc;
+        }
+
+        // 6/16MB - arena_resize()
+        {
+            usize add = rwlj_mb(2);
+            usize new_size = old_size + add;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            committed += commit_size;
+            used += add;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(alloc == old_alloc);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+
+            old_size = new_size;
+            old_alloc = alloc;
+        }
+
+        // 16/16MB - arena_resize()
+        {
+            usize add = rwlj_mb(10) - base;
+            usize new_size = old_size + add;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            committed = reserve_size;
+            used += add;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(alloc == old_alloc);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+
+            old_size = new_size;
+            old_alloc = alloc;
+        }
+
+        // 16/16MB - failed arena_resize()
+        {
+            usize add = rwlj_mb(1);
+            usize new_size = old_size + add;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            rwlj_testing_expect(alloc == NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+        }
+
+        // 16/16MB - failed arena_alloc()
+        {
+            usize alloc_size = rwlj_mb(2);
+            void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+
+            rwlj_testing_expect(alloc == NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+        }
+
+        // arena_free_all()
+        {
+            rwlj_arena_free_all(&arena);
+
+            committed = commit_size;
+            used = base;
+
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+        }
+
+        // arena_destroy()
+        {
+            rwlj_arena_destroy(&arena);
+
+            rwlj_testing_expect(arena.buf == NULL);
+            rwlj_testing_expect_value(arena.kind, -1);
+            rwlj_testing_expect_value(arena.min_commit, 0);
+            rwlj_testing_expect_value(arena.min_reserve, 0);
+            rwlj_testing_expect_value(arena.total_used, 0);
         }
     }
 
-    TEST("Enlarges last arena allocation")
+    TEST("Growing Arena")
     {
-        u8 buf[rwlj_kb(1)] = { 0 };
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
+        usize reserve_size = rwlj_mb(4);
+        usize commit_size = rwlj_mb(2);
 
-        usize allocation_size = arena.total_size / 4;
-        usize allocated_memory = 0;
+        rwlj_arena_init_growing(&arena, reserve_size);
+        usize used = base;
+        usize total_used = used;
+        usize committed = commit_size;
 
-        u8 *allocation = NULL;
-        for (usize i = 0, allocation_num = 3; i < allocation_num; i += 1) {
-            allocation = rwlj_arena_alloc(&arena, allocation_size);
-            allocated_memory += allocation_size;
+        // Setup
+        {
+            rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_GROWING);
+            rwlj_testing_expect(arena.buf != NULL);
+            rwlj_testing_expect_value(arena.buf->reserve_size, reserve_size);
+            rwlj_testing_expect_value(arena.buf->commit_size, commit_size);
+            rwlj_testing_expect_value(arena.min_reserve, reserve_size);
+            rwlj_testing_expect_value(arena.min_commit, commit_size);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
         }
 
-        rwlj_testing_expect(allocation != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, allocated_memory);
+        // 2/4MB - arena_alloc()
+        {
+            usize n = 8;
+            usize total_size = rwlj_mb(2);
+            rwlj_assert(total_size % n == 0);
+            usize alloc_size = total_size / n;
 
-        u8 *resized_allocation = rwlj_arena_resize(
-            &arena, allocation, allocation_size, allocation_size * 2
-        );
+            for (isize i = 1; i <= n; i += 1) {
+                void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+                used += alloc_size;
 
-        rwlj_testing_expect(resized_allocation != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
+                rwlj_testing_expect(alloc != NULL);
+                rwlj_testing_expect_value(arena.buf->used, used);
+                rwlj_testing_expect_value(arena.total_used, used);
+            }
+            committed += commit_size;
+            total_used = used;
+
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, total_used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+        }
+
+        // 4/4MB - arena_alloc()
+        {
+            usize alloc_size = rwlj_mb(2) - base;
+            void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+
+            committed = arena.buf->reserve_size;
+            used += alloc_size;
+            total_used = used;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+        }
+
+        // 2/4MB - arena_alloc() new buffer
+        usize old_size = 0;
+        void *old_alloc = NULL;
+        {
+            usize alloc_size = rwlj_mb(2);
+            void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+
+            committed = rwlj_align_pow2(alloc_size + base, commit_size);
+            used = alloc_size + base;
+            total_used += alloc_size + base;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(arena.buf->prev != NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, total_used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+
+            old_size = alloc_size;
+            old_alloc = alloc;
+        }
+
+        // 4/4MB - arena_resize() enlarge
+        {
+            usize add = rwlj_mb(2) - base;
+            usize new_size = old_size + add;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            committed = arena.buf->reserve_size;
+            used += add;
+            total_used += add;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(alloc == old_alloc);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, total_used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+
+            old_size = new_size;
+            old_alloc = alloc;
+        }
+
+        // 1/4MB - arena_resize() shrink
+        {
+            usize sub = rwlj_mb(3) - base;
+            usize new_size = old_size - sub;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            used -= sub;
+            total_used -= sub;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(alloc == old_alloc);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, total_used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+
+            old_size = new_size;
+            old_alloc = alloc;
+        }
+
+        // 6/6MB - arena_resize() new buffer
+        {
+            usize new_size = rwlj_mb(5);
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            used = new_size + base;
+            total_used += new_size + base;
+            committed = arena.buf->reserve_size;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(alloc != old_alloc);
+            rwlj_testing_expect(arena.buf->prev != NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, total_used);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+        }
+
+        // arena_free_all()
+        {
+            rwlj_arena_free_all(&arena);
+
+            committed = commit_size;
+            used = base;
+
+            rwlj_testing_expect(arena.buf->prev == NULL);
+            rwlj_testing_expect_value(arena.buf->committed, committed);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+        }
+
+        // arena_destroy()
+        {
+            rwlj_arena_destroy(&arena);
+
+            rwlj_testing_expect(arena.buf == NULL);
+            rwlj_testing_expect_value(arena.kind, -1);
+            rwlj_testing_expect_value(arena.min_commit, 0);
+            rwlj_testing_expect_value(arena.min_reserve, 0);
+            rwlj_testing_expect_value(arena.total_used, 0);
+        }
     }
 
-    TEST("Shrinks last arena allocation")
+    TEST("Buffer Arena")
     {
-        u8 buf[rwlj_kb(1)] = { 0 };
+        usize reserve_size = rwlj_mb(16);
+        void *buf = malloc(reserve_size);
+
         rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
 
-        usize allocation_size = arena.total_size / 4;
-        usize allocated_memory = 0;
+        rwlj_arena_init_from_buffer(&arena, buf, reserve_size);
+        usize used = base;
 
-        u8 *allocation = NULL;
-        for (usize i = 0, allocation_num = 3; i < allocation_num; i += 1) {
-            allocation = rwlj_arena_alloc(&arena, allocation_size);
-            allocated_memory += allocation_size;
+        usize commit_size = reserve_size;
+
+        // Setup
+        {
+            rwlj_testing_expect_value(arena.kind, RWLJ_ARENA_BUFFER);
+            rwlj_testing_expect(arena.buf != NULL);
+            rwlj_testing_expect_value(arena.buf->reserve_size, reserve_size);
+            rwlj_testing_expect_value(arena.buf->commit_size, commit_size);
+            rwlj_testing_expect_value(arena.min_reserve, reserve_size);
+            rwlj_testing_expect_value(arena.min_commit, commit_size);
+            rwlj_testing_expect_value(arena.buf->committed, commit_size);
         }
 
-        rwlj_testing_expect(allocation != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, allocated_memory);
+        // 2/16MB - arena_alloc()
+        {
+            usize n = 8;
+            usize total_size = rwlj_mb(2);
+            rwlj_assert(total_size % n == 0);
+            usize alloc_size = total_size / n;
 
-        u8 *resized_mem = rwlj_arena_resize(
-            &arena, allocation, allocation_size, allocation_size / 2
-        );
-        allocated_memory -= (allocation_size / 2);
+            for (isize i = 1; i < n; i += 1) {
+                void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+                used += alloc_size;
 
-        rwlj_testing_expect(resized_mem != NULL);
-        rwlj_testing_expect_value(arena.allocated_size, allocated_memory);
+                rwlj_testing_expect(alloc != NULL);
+                rwlj_testing_expect_value(arena.buf->used, used);
+                rwlj_testing_expect_value(arena.total_used, used);
+            }
+
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+        }
+
+        // 4/16MB - arena_alloc()
+        usize old_size = 0;
+        void *old_alloc = NULL;
+        {
+            usize alloc_size = rwlj_mb(2);
+            void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+
+            used += alloc_size;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+
+            old_size = alloc_size;
+            old_alloc = alloc;
+        }
+
+        // 6/16MB - arena_resize()
+        {
+            usize add = rwlj_mb(2);
+            usize new_size = old_size + add;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            used += add;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(alloc == old_alloc);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+
+            old_size = new_size;
+            old_alloc = alloc;
+        }
+
+        // 16/16MB - arena_resize()
+        {
+            usize add = rwlj_mb(10) - base;
+            usize new_size = old_size + add;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            used += add;
+
+            rwlj_testing_expect(alloc != NULL);
+            rwlj_testing_expect(alloc == old_alloc);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+
+            old_size = new_size;
+            old_alloc = alloc;
+        }
+
+        // 16/16MB - failed arena_resize()
+        {
+            usize add = rwlj_mb(1);
+            usize new_size = old_size + add;
+            void *alloc =
+                rwlj_arena_resize(&arena, old_alloc, old_size, new_size);
+
+            rwlj_testing_expect(alloc == NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+        }
+
+        // 16/16MB - failed arena_alloc()
+        {
+            usize alloc_size = rwlj_mb(2);
+            void *alloc = rwlj_arena_alloc(&arena, alloc_size);
+
+            rwlj_testing_expect(alloc == NULL);
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+        }
+
+        // arena_free_all()
+        {
+            rwlj_arena_free_all(&arena);
+
+            used = base;
+
+            rwlj_testing_expect_value(arena.buf->used, used);
+            rwlj_testing_expect_value(arena.total_used, used);
+        }
+
+        // arena_destroy()
+        {
+            rwlj_arena_destroy(&arena);
+
+            rwlj_testing_expect(arena.buf != NULL);
+            rwlj_testing_expect_value(arena.kind, -1);
+            rwlj_testing_expect_value(arena.min_commit, 0);
+            rwlj_testing_expect_value(arena.min_reserve, 0);
+            rwlj_testing_expect_value(arena.total_used, 0);
+        }
+
+        free(buf);
     }
 }
 
@@ -473,22 +829,6 @@ test_array(void)
         rwlj_testing_expect_value(array.capacity, array_new_len);
     }
 
-    TEST("Grows dynamic array up to arena's total size")
-    {
-        u8 buf[rwlj_kb(1)] = { 0 };
-
-        rwljArena arena = { 0 };
-        rwlj_arena_init_from_buffer(&arena, buf, rwlj_count_of(buf));
-
-        rwljArray_Isize array = { 0 };
-        isize array_cap = 32;
-        rwlj_array_init_dynamic_reserve(&array, array_cap, &arena);
-
-        isize max_len = rwlj_count_of(buf) / rwlj_size_of(isize);
-        rwlj_testing_expect(rwlj_array_resize(&array, max_len));
-        rwlj_testing_expect_value(array.capacity, max_len);
-    }
-
     TEST("Doesn't resize dynamic array past arena's total size")
     {
         u8 buf[rwlj_kb(1)] = { 0 };
@@ -499,12 +839,17 @@ test_array(void)
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
 
-        isize max_capacity = arena.total_size / array.item_size;
+        isize max_capacity =
+            (arena.buf->reserve_size - RWLJ_MEMORY_BUFFER_HEADER) /
+            array.item_size;
+
+        rwlj_assert(arena.min_reserve % array.item_size == 0);
         rwlj_testing_expect(rwlj_array_resize(&array, max_capacity + 1));
         rwlj_testing_expect_value(array.capacity, max_capacity);
         rwlj_testing_expect_value(
-            cast(isize) arena.total_size,
-            max_capacity * cast(isize) array.item_size
+            cast(isize) arena.buf->reserve_size,
+            max_capacity * cast(isize) array.item_size +
+                RWLJ_MEMORY_BUFFER_HEADER
         );
     }
 
@@ -523,16 +868,16 @@ test_array(void)
         allocation = rwlj_arena_alloc(&arena, 128);
         rwlj_unused(allocation);
 
-        usize allocated = arena.allocated_size;
+        usize allocated = arena.buf->used;
 
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
 
-        isize max_capacity = arena.total_size / array.item_size;
+        isize max_capacity = arena.buf->reserve_size / array.item_size;
         rwlj_testing_expect(rwlj_array_resize(&array, max_capacity));
         rwlj_testing_expect_value(
             array.capacity,
-            cast(isize)((arena.total_size - allocated) / array.item_size)
+            cast(isize)((arena.buf->reserve_size - allocated) / array.item_size)
         );
     }
 
@@ -612,7 +957,10 @@ test_array(void)
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
 
-        isize new_capacity = cast(isize)(arena.total_size / array.item_size);
+        isize new_capacity = cast(isize)(
+            (arena.buf->reserve_size - RWLJ_MEMORY_BUFFER_HEADER) /
+            array.item_size
+        );
         isize arbitrary_limit = new_capacity * new_capacity;
         for (isize i = 0; i < arbitrary_limit; i += 1) {
             if (i < new_capacity) {
@@ -623,7 +971,7 @@ test_array(void)
         }
         rwlj_testing_expect_value(array.len, new_capacity);
         rwlj_testing_expect_value(array.capacity, new_capacity);
-        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
+        rwlj_testing_expect_value(arena.buf->used, arena.buf->reserve_size);
     }
 
     TEST("Preppends to dynamic array")
@@ -684,7 +1032,10 @@ test_array(void)
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
 
-        isize new_capacity = cast(isize)(arena.total_size / array.item_size);
+        isize new_capacity = cast(isize)(
+            (arena.buf->reserve_size - RWLJ_MEMORY_BUFFER_HEADER) /
+            array.item_size
+        );
         isize arbitrary_limit = new_capacity * new_capacity;
         for (isize i = 0; i < arbitrary_limit; i += 1) {
             if (i < new_capacity) {
@@ -695,7 +1046,7 @@ test_array(void)
         }
         rwlj_testing_expect_value(array.len, new_capacity);
         rwlj_testing_expect_value(array.capacity, new_capacity);
-        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
+        rwlj_testing_expect_value(arena.buf->used, arena.buf->reserve_size);
     }
 
     TEST("Inserts into dynamic array")
@@ -756,7 +1107,10 @@ test_array(void)
         rwljArray_Isize array = { 0 };
         rwlj_array_init_dynamic(&array, &arena);
 
-        isize new_capacity = cast(isize)(arena.total_size / array.item_size);
+        isize new_capacity = cast(isize)(
+            (arena.buf->reserve_size - RWLJ_MEMORY_BUFFER_HEADER) /
+            array.item_size
+        );
         isize arbitrary_limit = new_capacity * new_capacity;
         for (isize i = 0; i < arbitrary_limit; i += 1) {
             if (i < new_capacity) {
@@ -767,7 +1121,7 @@ test_array(void)
         }
         rwlj_testing_expect_value(array.len, new_capacity);
         rwlj_testing_expect_value(array.capacity, new_capacity);
-        rwlj_testing_expect_value(arena.allocated_size, arena.total_size);
+        rwlj_testing_expect_value(arena.buf->used, arena.buf->reserve_size);
     }
 
     TEST("Dynamic array works as a stack")
@@ -1953,6 +2307,7 @@ test_string(void)
 
     TEST("Splits strings into parts")
     {
+        usize base = RWLJ_MEMORY_BUFFER_HEADER;
         {
             u8 buf[rwlj_kb(1)] = { 0 };
             rwljArena arena = { 0 };
@@ -1963,7 +2318,7 @@ test_string(void)
 
             rwljSlice_String c = rwlj_string_split(a, b, &arena);
             rwlj_testing_expect_value(c.len, 0);
-            rwlj_testing_expect_value(arena.allocated_size, 0);
+            rwlj_testing_expect_value(arena.buf->used - base, 0);
         }
         {
             u8 buf[rwlj_kb(1)] = { 0 };
@@ -1983,7 +2338,7 @@ test_string(void)
             rwljSlice_String c = rwlj_string_split(a, b, &arena);
             rwlj_testing_expect_value(c.len, expected.len);
             rwlj_testing_expect_value(
-                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+                arena.buf->used - base, rwlj_size_of(rwljString) * expected.len
             );
 
             for (isize i = 0; i < expected.len && i < c.len; i += 1) {
@@ -2008,7 +2363,7 @@ test_string(void)
             rwljSlice_String c = rwlj_string_split(a, b, &arena);
             rwlj_testing_expect_value(c.len, expected.len);
             rwlj_testing_expect_value(
-                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+                arena.buf->used - base, rwlj_size_of(rwljString) * expected.len
             );
 
             for (isize i = 0; i < expected.len && i < c.len; i += 1) {
@@ -2035,7 +2390,7 @@ test_string(void)
             rwljSlice_String c = rwlj_string_split(a, b, &arena);
             rwlj_testing_expect_value(c.len, expected.len);
             rwlj_testing_expect_value(
-                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+                arena.buf->used - base, rwlj_size_of(rwljString) * expected.len
             );
 
             for (isize i = 0; i < expected.len && i < c.len; i += 1) {
@@ -2060,7 +2415,7 @@ test_string(void)
             rwljSlice_String c = rwlj_string_split(a, b, &arena);
             rwlj_testing_expect_value(c.len, expected.len);
             rwlj_testing_expect_value(
-                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+                arena.buf->used - base, rwlj_size_of(rwljString) * expected.len
             );
 
             for (isize i = 0; i < expected.len && i < c.len; i += 1) {
@@ -2086,7 +2441,7 @@ test_string(void)
             rwljSlice_String c = rwlj_string_split(a, b, &arena);
             rwlj_testing_expect_value(c.len, expected.len);
             rwlj_testing_expect_value(
-                arena.allocated_size, rwlj_size_of(rwljString) * expected.len
+                arena.buf->used - base, rwlj_size_of(rwljString) * expected.len
             );
 
             for (isize i = 0; i < expected.len && i < c.len; i += 1) {
