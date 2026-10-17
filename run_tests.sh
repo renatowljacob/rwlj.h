@@ -2,7 +2,8 @@
 # shellcheck disable=SC2086
 
 default_args="-std=gnu11 -Wall -Wextra -Wformat-overflow -Wuse-after-free=1 \
-    -Wstrict-prototypes -Wconversion -Wno-override-init -O0 -g3"
+    -Wstrict-prototypes -Wconversion -Wno-override-init -Wno-unused-variable \
+    -O0 -g3"
 analyzer_args="${default_args} -fanalyzer "
 # sanitizer_args="${default_args} -fsanitize=address,undefined -Werror -fmax-errors=1 "
 sanitizer_args="${default_args} -fsanitize=address -Werror -fmax-errors=1 "

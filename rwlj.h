@@ -141,15 +141,15 @@ typedef unsigned __int64 u64;
 
 #endif
 
-// rwlj_static_assert(sizeof(u8) == sizeof(i8));
-// rwlj_static_assert(sizeof(u16) == sizeof(i16));
-// rwlj_static_assert(sizeof(u32) == sizeof(i32));
-// rwlj_static_assert(sizeof(u64) == sizeof(i64));
-//
-// rwlj_static_assert(sizeof(u8) == 1);
-// rwlj_static_assert(sizeof(u16) == 2);
-// rwlj_static_assert(sizeof(u32) == 4);
-// rwlj_static_assert(sizeof(u64) == 8);
+rwlj_static_assert(sizeof(u8) == sizeof(i8));
+rwlj_static_assert(sizeof(u16) == sizeof(i16));
+rwlj_static_assert(sizeof(u32) == sizeof(i32));
+rwlj_static_assert(sizeof(u64) == sizeof(i64));
+
+rwlj_static_assert(sizeof(u8) == 1);
+rwlj_static_assert(sizeof(u16) == 2);
+rwlj_static_assert(sizeof(u32) == 4);
+rwlj_static_assert(sizeof(u64) == 8);
 
 typedef intptr_t intptr;
 typedef uintptr_t uintptr;
@@ -157,7 +157,7 @@ typedef ptrdiff_t ptrdiff;
 typedef ptrdiff isize;
 typedef size_t usize;
 
-// rwlj_static_assert(sizeof(usize) == sizeof(isize));
+rwlj_static_assert(sizeof(usize) == sizeof(isize));
 
 typedef bool b8;
 typedef i16 b16;
@@ -168,9 +168,8 @@ typedef isize bsize;
 typedef float f32;
 typedef double f64;
 
-// TODO: add pragma
-// rwlj_static_assert(sizeof(f32) == 4);
-// rwlj_static_assert(sizeof(f64) == 8);
+rwlj_static_assert(sizeof(f32) == 4);
+rwlj_static_assert(sizeof(f64) == 8);
 
 #define RWLJ_U8_MIN 0u
 #define RWLJ_U8_MAX 0xffu
