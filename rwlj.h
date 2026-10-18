@@ -10,30 +10,20 @@
 #ifndef RWLJ_H
 #define RWLJ_H
 
-#if !defined(_WIN64) && !defined(__x86_64__) && !defined(_M_X64) &&            \
-    !defined(__64BIT__) && !defined(__powerpc64__) && !defined(__ppc64__)
-
+#if !defined(_WIN64) && !defined(__x86_64__) && !defined(__64BIT__)
 #error 32bit is not supported
-
 #endif
 
 #ifdef __linux__
-
 #define RWLJ_OS_LINUX 1
-
 #elif defined(_WIN64)
-
 #define RWLJ_OS_WINDOWS 1
-
 #else
-
 #error This operating system is not supported
-
 #endif
 
 #ifdef RWLJ_OS_LINUX
 // Linux headers
-
 #ifdef __SSE2__
 #include <emmintrin.h>
 #endif
@@ -53,10 +43,8 @@
 #include <unistd.h>
 
 #define _GNU_SOURCE
-
 #elif defined(RWLJ_OS_WINDOWS)
 // Windows headers
-
 #include <intrin.h>
 #include <malloc.h>
 #include <stdarg.h>
@@ -64,8 +52,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <time.h>
 #include <windows.h>
-
 #endif
 
 // Synchronization facilities (atomic, intrinsics)
@@ -85,13 +73,9 @@
  */
 
 #if defined(__clang__) || defined(__GNUC__)
-
 #define RWLJ_PRINTF_ARGS(num) __attribute__((format(printf, num, ((num) + 1))))
-
 #else
-
 #define RWLJ_PRINTF_ARGS(num)
-
 #endif
 
 #define global     static
@@ -118,7 +102,6 @@
 #define rwlj_panic(msg) rwlj_static_assert_msg(false, msg)
 
 #ifdef RWLJ_OS_LINUX
-
 typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
@@ -127,9 +110,7 @@ typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
-
 #elif defined(RWLJ_OS_WINDOWS)
-
 typedef signed __int8 i8;
 typedef unsigned __int8 u8;
 typedef signed __int16 i16;
@@ -138,7 +119,6 @@ typedef signed __int32 i32;
 typedef unsigned __int32 u32;
 typedef signed __int64 i64;
 typedef unsigned __int64 u64;
-
 #endif
 
 // rwlj_static_assert(sizeof(u8) == sizeof(i8));
@@ -211,13 +191,9 @@ typedef double f64;
         .b
 
 #ifdef _MSC_VER
-
 #define RWLJ_TRAP() __debugbreak()
-
 #else
-
 #define RWLJ_TRAP() __builtin_trap()
-
 #endif
 
 #define rwlj_size_of(x) (isize)(sizeof(x))
@@ -936,8 +912,8 @@ rwljString rwlj_sbprintln(rwljString_Builder *sb, rwljString s);
 
 // TODO: Port this to win32
 
-typedef long rwljDuration;
-typedef long rwljTime;
+typedef i64 rwljDuration;
+typedef i64 rwljTime;
 
 #define RWLJ_TIME_NANOSECOND  (1ll)
 #define RWLJ_TIME_MICROSECOND (1ll * 1000ll)
@@ -1165,7 +1141,6 @@ rwlj_insertion_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
  */
 
 #ifdef RWLJ_OS_LINUX
-
 void *
 rwlj_virtual_memory_reserve(usize size)
 {
@@ -1205,9 +1180,7 @@ rwlj_virtual_memory_free(void *mem, usize size)
 {
     munmap(mem, size);
 }
-
 #elif defined(RWLJ_OS_WINDOWS)
-
 void *
 rwlj_virtual_memory_reserve(usize size)
 {
@@ -1244,8 +1217,7 @@ rwlj_virtual_memory_free(void *mem, usize size)
     rwlj_unused(size);
     VirtualFree(mem, 0, MEM_RELEASE);
 }
-
-#endif
+#endif // RWLJ_OS_LINUX
 
 rwljMemory_Buffer *
 rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment)
@@ -3805,6 +3777,7 @@ rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
  *  Time
  */
 
+#ifdef RWLJ_OS_LINUX
 rwljTime
 rwlj_time_now(void)
 {
@@ -3826,18 +3799,6 @@ rwlj_time_now(void)
     return 0;
 }
 
-rwljDuration
-rwlj_time_diff(rwljTime t1, rwljTime t2)
-{
-    return t1 - t2;
-}
-
-rwljDuration
-rwlj_time_since(rwljTime t)
-{
-    return rwlj_time_diff(rwlj_time_now(), t);
-}
-
 i64
 rwlj_time_unix_now(void)
 {
@@ -3847,18 +3808,6 @@ rwlj_time_unix_now(void)
     }
 
     return 0;
-}
-
-rwljDuration
-rwlj_time_unix_diff(i64 t1, i64 t2)
-{
-    return t1 - t2;
-}
-
-rwljDuration
-rwlj_time_unix_since(i64 t)
-{
-    return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
 }
 
 rwljDuration
@@ -3879,13 +3828,66 @@ rwlj_time_sleep(rwljDuration time)
 
     return remaining.tv_sec * RWLJ_TIME_SECOND + remaining.tv_nsec;
 }
+#elif defined(RWLJ_OS_WINDOWS)
+rwljTime
+rwlj_time_now(void)
+{
+    struct timespec timespec = { 0 };
+    if (timespec_get(&timespec, TIME_UTC)) {
+        return timespec.tv_sec * RWLJ_TIME_SECOND + timespec.tv_nsec;
+    }
+
+    return 0;
+}
+
+i64
+rwlj_time_unix_now(void)
+{
+    struct timespec timespec = { 0 };
+    if (timespec_get(&timespec, TIME_UTC)) {
+        return timespec.tv_sec;
+    }
+
+    return 0;
+}
+
+rwljDuration
+rwlj_time_sleep(rwljDuration time)
+{
+    rwlj_unused(time);
+    rwlj_not_implemented();
+}
+#endif // RWLJ_OS_LINUX
+
+rwljDuration
+rwlj_time_diff(rwljTime t1, rwljTime t2)
+{
+    return t1 - t2;
+}
+
+rwljDuration
+rwlj_time_since(rwljTime t)
+{
+    return rwlj_time_diff(rwlj_time_now(), t);
+}
+
+rwljDuration
+rwlj_time_unix_diff(i64 t1, i64 t2)
+{
+    return t1 - t2;
+}
+
+rwljDuration
+rwlj_time_unix_since(i64 t)
+{
+    return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
+}
 
 /*
  *  Platform Abstraction
  */
 
 #ifdef RWLJ_OS_LINUX
-
 usize
 rwlj_os_get_page_size(void)
 {
@@ -3894,9 +3896,7 @@ rwlj_os_get_page_size(void)
 
     return cast(usize) page_size;
 }
-
 #elif RWLJ_OS_WINDOWS
-
 usize
 rwlj_os_get_page_size(void)
 {
@@ -3907,7 +3907,6 @@ rwlj_os_get_page_size(void)
 
     return page_size;
 }
-
 #endif
 
 /*
