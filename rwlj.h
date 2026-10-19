@@ -934,7 +934,7 @@ rwljDuration rwlj_time_sleep(rwljDuration time);
  *  Platform Abstraction
  */
 
-usize rwlj_os_get_page_size(void);
+usize rwlj_virtual_memory_page_size(void);
 
 #endif // RWLJ_H
 
@@ -1224,7 +1224,7 @@ rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment)
     rwlj_assert(reserve_size != 0 && commit_size != 0);
     rwlj_assert(alignment <= commit_size);
 
-    usize page_size = rwlj_os_get_page_size();
+    usize page_size = rwlj_virtual_memory_page_size();
     reserve_size =
         rwlj_max(rwlj_align_pow2(reserve_size, page_size), page_size);
     commit_size =
@@ -1379,7 +1379,7 @@ rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment)
         if (allocation == NULL) {
             usize reserve_size = arena->min_reserve;
             usize commit_size = arena->min_commit;
-            usize page_size = rwlj_os_get_page_size();
+            usize page_size = rwlj_virtual_memory_page_size();
             if (size > reserve_size) {
                 reserve_size = rwlj_align_pow2(
                     size + RWLJ_MEMORY_BUFFER_HEADER, page_size
@@ -3888,7 +3888,7 @@ rwlj_time_unix_since(i64 t)
 
 #ifdef RWLJ_OS_LINUX
 usize
-rwlj_os_get_page_size(void)
+rwlj_virtual_memory_page_size(void)
 {
     isize page_size = sysconf(_SC_PAGESIZE);
     rwlj_assert(page_size > 0 && rwlj_is_pow2(page_size));
@@ -3897,7 +3897,7 @@ rwlj_os_get_page_size(void)
 }
 #elif RWLJ_OS_WINDOWS
 usize
-rwlj_os_get_page_size(void)
+rwlj_virtual_memory_page_size(void)
 {
     SYSTEM_INFO sysinfo = { 0 };
     GetSystemInfo(&sysinfo);
