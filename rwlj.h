@@ -424,6 +424,7 @@ typedef i32 rwljMemoryOrder;
  *  Virtual Memory Allocation
  */
 
+usize rwlj_virtual_memory_page_size(void);
 void *rwlj_virtual_memory_reserve(usize size);
 void *rwlj_virtual_memory_commit(void *mem, usize size);
 void rwlj_virtual_memory_decommit(void *mem, usize size);
@@ -930,12 +931,6 @@ i64 rwlj_time_unix_diff(i64 t1, i64 t2);
 i64 rwlj_time_unix_since(i64 time);
 rwljDuration rwlj_time_sleep(rwljDuration time);
 
-/*
- *  Platform Abstraction
- */
-
-usize rwlj_virtual_memory_page_size(void);
-
 #endif // RWLJ_H
 
 #define RWLJ_IMPLEMENTATION
@@ -1140,6 +1135,15 @@ rwlj_insertion_sort(void *data, isize len, isize size, rwljCompare_Proc proc)
  */
 
 #ifdef RWLJ_OS_LINUX
+usize
+rwlj_virtual_memory_page_size(void)
+{
+    isize page_size = sysconf(_SC_PAGESIZE);
+    rwlj_assert(page_size > 0 && rwlj_is_pow2(page_size));
+
+    return cast(usize) page_size;
+}
+
 void *
 rwlj_virtual_memory_reserve(usize size)
 {
@@ -1180,6 +1184,17 @@ rwlj_virtual_memory_free(void *mem, usize size)
     munmap(mem, size);
 }
 #elif defined(RWLJ_OS_WINDOWS)
+usize
+rwlj_virtual_memory_page_size(void)
+{
+    SYSTEM_INFO sysinfo = { 0 };
+    GetSystemInfo(&sysinfo);
+    usize page_size = sysinfo.dwPageSize;
+    rwlj_assert(page_size > 0 && rwlj_is_pow2(page_size));
+
+    return page_size;
+}
+
 void *
 rwlj_virtual_memory_reserve(usize size)
 {
@@ -3881,32 +3896,6 @@ rwlj_time_unix_since(i64 t)
 {
     return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
 }
-
-/*
- *  Platform Abstraction
- */
-
-#ifdef RWLJ_OS_LINUX
-usize
-rwlj_virtual_memory_page_size(void)
-{
-    isize page_size = sysconf(_SC_PAGESIZE);
-    rwlj_assert(page_size > 0 && rwlj_is_pow2(page_size));
-
-    return cast(usize) page_size;
-}
-#elif RWLJ_OS_WINDOWS
-usize
-rwlj_virtual_memory_page_size(void)
-{
-    SYSTEM_INFO sysinfo = { 0 };
-    GetSystemInfo(&sysinfo);
-    usize page_size = sysinfo.dwPageSize;
-    rwlj_assert(page_size > 0 && rwlj_is_pow2(page_size));
-
-    return page_size;
-}
-#endif
 
 /*
  *  Testing
