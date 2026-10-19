@@ -53,10 +53,17 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <time.h>
-#include <windows.h>
-#endif
 
-// Synchronization facilities (atomic, intrinsics)
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#define WIN32_MEAN_AND_LEAN
+#define VC_EXTRALEAN
+#include <windows.h>
+#undef NOMINMAX
+#undef WIN32_LEAN_AND_MEAN
+#undef WIN32_MEAN_AND_LEAN
+#undef VC_EXTRALEAN
+#endif
 
 // TODO: basic Linux/Windows IO and networking
 
@@ -417,8 +424,6 @@ typedef i32 rwljMemoryOrder;
 #define rwlj_atomic_thread_fence(order) atomic_thread_fence(order)
 
 #define rwlj_atomic_signal_fence(order) atomic_signal_fence(order)
-
-// TODO: Implement virtual memory allocation procedures
 
 /*
  *  Virtual Memory Allocation
@@ -910,8 +915,6 @@ rwljString rwlj_sbprintln(rwljString_Builder *sb, rwljString s);
  *  Time
  */
 
-// TODO: Port this to win32
-
 typedef i64 rwljDuration;
 typedef i64 rwljTime;
 
@@ -930,6 +933,25 @@ i64 rwlj_time_unix_now(void);
 i64 rwlj_time_unix_diff(i64 t1, i64 t2);
 i64 rwlj_time_unix_since(i64 time);
 rwljDuration rwlj_time_sleep(rwljDuration time);
+
+/*
+ *  Platform-specific
+ */
+
+// TODO: UTF-8 from/to UTF-16 procedures
+
+typedef struct rwljFile {
+#ifdef RWLJ_OS_LINUX
+    i32 handle;
+#else // RWLJ_OS_WINDOWS
+    HANDLE handle;
+#endif
+} rwljFile;
+
+rwljFile rwlj_file_open(rwljString path);
+void rwlj_file_write(void);
+void rwlj_file_read(void);
+void rwlj_file_close(rwljFile file);
 
 #endif // RWLJ_H
 
@@ -3865,6 +3887,7 @@ rwlj_time_unix_now(void)
     return 0;
 }
 
+// TODO: Implement this
 rwljDuration
 rwlj_time_sleep(rwljDuration time)
 {
@@ -3895,6 +3918,30 @@ rwljDuration
 rwlj_time_unix_since(i64 t)
 {
     return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
+}
+
+/*
+ *  Platform-specific
+ */
+
+void
+rwlj_file_open(void)
+{
+}
+
+void
+rwlj_file_write(void)
+{
+}
+
+void
+rwlj_file_read(void)
+{
+}
+
+void
+rwlj_file_close(void)
+{
 }
 
 /*
