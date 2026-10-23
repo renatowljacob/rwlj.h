@@ -88,6 +88,7 @@
 #define global     static
 #define internal   static
 #define persistent static
+#define read_only  static const
 
 #define rwlj_concat(x, y)  x##y
 #define rwlj_concat_(x, y) x##_##y
@@ -285,9 +286,26 @@ rwlj_static_assert(sizeof(f64) == 8);
         (y) = __temp;                                                          \
     } while (false)
 
-#define rwlj_max(x, y)          (x > y ? x : y)
-#define rwlj_min(x, y)          (x < y ? x : y)
-#define rwlj_clamp(x, min, max) (rwlj_max(rwlj_min(x, max), min))
+#define rwlj_max(x, y)               (x > y ? x : y)
+#define rwlj_min(x, y)               (x < y ? x : y)
+#define rwlj_clamp(x, min, max)      (rwlj_max(rwlj_min(x, max), min))
+#define rwlj_is_between(x, min, max) ((min) <= (x) && (x) <= (max))
+
+#define GENERIC_RANGE(T, name)                                                 \
+    typedef struct rwlj_concat_(rwljRange, name) {                             \
+        T min;                                                                 \
+        T max;                                                                 \
+    } rwlj_concat_(rwljRange, name)
+GENERIC_RANGE(u8, U8);
+GENERIC_RANGE(u16, U16);
+GENERIC_RANGE(u32, U32);
+GENERIC_RANGE(u64, U64);
+GENERIC_RANGE(usize, Usize);
+GENERIC_RANGE(i8, I8);
+GENERIC_RANGE(i16, I16);
+GENERIC_RANGE(i32, I32);
+GENERIC_RANGE(i64, I64);
+GENERIC_RANGE(isize, Isize);
 
 #define rwlj_align_pow2(x, align) (((x) + (align) - 1) & (~((align) - 1)))
 #define rwlj_is_pow2(x)           ((x) && ((x) & ((x) - 1)) == 0)
@@ -563,7 +581,6 @@ typedef isize rwljArray_Kind;
         T *data;                                                               \
         isize len;                                                             \
     } rwlj_concat_(rwljSlice, name)
-
 GENERIC_ARRAY(char, Char);
 GENERIC_ARRAY(i8, I8);
 GENERIC_ARRAY(i16, I16);
@@ -771,8 +788,12 @@ typedef struct rwljString {
     char *data;
     isize len;
 } rwljString;
-
+typedef struct rwljString16 {
+    u16 *data;
+    isize len;
+} rwljString16;
 GENERIC_ARRAY(rwljString, String);
+GENERIC_ARRAY(rwljString16, String16);
 
 #define STRING(string) cast(rwljString){ string, rwlj_size_of(string) - 1 }
 
@@ -785,6 +806,62 @@ GENERIC_ARRAY(rwljString, String);
 #define rwlj_string(str, start, end) rwlj_string_from_ptr(str.data, start, end)
 
 #define rwlj_string_from_slice(slice) rwlj_string(slice, 0, (slice)->len)
+
+/*
+ *  UTF-8
+ */
+
+typedef i32 rwljRune;
+
+#define RWLJ_RUNE_INVALID 0xFFFD
+#define RWLJ_RUNE_MAX     0x10FFFF
+
+// Maximum character representation per byte
+#define RWLJ_UTF8_1BYTE_MAX (rwlj_bit(7) - 1)
+#define RWLJ_UTF8_2BYTE_MAX (rwlj_bit(11) - 1)
+#define RWLJ_UTF8_3BYTE_MAX (rwlj_bit(16) - 1)
+#define RWLJ_UTF8_4BYTE_MAX RWLJ_RUNE_MAX
+
+// Lower bits masks
+#define RWLJ_UTF8_MASKL2  0x1F
+#define RWLJ_UTF8_MASKL3  0x0F
+#define RWLJ_UTF8_MASKL4  0x7
+#define RWLJ_UTF8_MASKLCB 0x3F
+
+// Higher bits masks
+#define RWLJ_UTF8_MASKH2  0xC0
+#define RWLJ_UTF8_MASKH3  0xE0
+#define RWLJ_UTF8_MASKH4  0xF0
+#define RWLJ_UTF8_MASKHCB 0x80
+
+// Continuation bytes range
+#define RWLJ_UTF8_CBLO 0x80
+#define RWLJ_UTF8_CBHI 0xBF
+
+// Surrogates range
+// High-half
+#define RWLJ_UTF16_SHILO 0xD800
+#define RWLJ_UTF16_SHIHI 0xDBFF
+
+// Low-half
+#define RWLJ_UTF16_SLOLO 0xDC00
+#define RWLJ_UTF16_SLOHI 0xDFFF
+
+// Maximum character representation per byte
+#define RWLJ_UTF16_1BYTE_MAX 0x10000
+#define RWLJ_UTF16_2BYTE_MAX RWLJ_RUNE_MAX
+
+#define RWLJ_UTF16_MASK 0x3FF
+
+// TODO: Wobbly-encoding (unpaired surrogates)
+
+isize rwlj_utf8_rune_len(rwljRune rune);
+isize rwlj_utf8_decode(rwljString s, rwljRune *rune);
+isize rwlj_utf8_encode(rwljSlice_U8 buf, rwljRune rune);
+
+isize rwlj_utf16_rune_len(rwljRune rune);
+isize rwlj_utf16_decode(rwljString16 s, rwljRune *rune);
+isize rwlj_utf16_encode(rwljSlice_U8 buf, rwljRune rune);
 
 // rwljString procedures
 bsize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
@@ -948,10 +1025,10 @@ typedef struct rwljFile {
 #endif
 } rwljFile;
 
-rwljFile rwlj_file_open(rwljString path);
-void rwlj_file_write(void);
-void rwlj_file_read(void);
-void rwlj_file_close(rwljFile file);
+// rwljFile rwlj_file_open(rwljString path);
+// void rwlj_file_write(void);
+// void rwlj_file_read(void);
+// void rwlj_file_close(rwljFile file);
 
 #endif // RWLJ_H
 
@@ -1665,6 +1742,249 @@ __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity)
     }
 
     return true;
+}
+
+/*
+ *  Unicode
+ */
+
+// clang-format off
+
+// Leading byte table lookup. If 0xC1, it's an ASCII byte. If 0xF1, it's a
+// invalid byte. Otherwise, a byte whose valid range is encoded in the first 4
+// bits, while its codepoint size is in the last 4
+u8 const __rwlj_leading_type[256] = {
+	[0x00] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x10] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x20] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x30] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x40] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x50] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x60] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x70] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x80] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0x90] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0xA0] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0xB0] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0xC0] = 0xF1, 0xF1, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+	[0xD0] = 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+	[0xE0] = 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x23, 0x03, 0x03,
+	[0xF0] = 0x34, 0x04, 0x04, 0x04, 0x44, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+};
+// clang-format on
+
+rwljRange_U8 __rwlj_utf8_valid_ranges[] = {
+    { .min = RWLJ_UTF8_CBLO, .max = RWLJ_UTF8_CBHI },
+    { .min = 0xA0, .max = RWLJ_UTF8_CBHI },
+    { .min = RWLJ_UTF8_CBLO, .max = 0x9F },
+    { .min = 0x90, .max = RWLJ_UTF8_CBHI },
+    { .min = RWLJ_UTF8_CBLO, .max = 0x8F },
+};
+
+isize
+rwlj_utf8_rune_len(rwljRune rune)
+{
+    u32 cp = cast(u32) rune;
+    isize len = -1;
+
+    if (cp <= RWLJ_UTF8_1BYTE_MAX) {
+        len = 1;
+    } else if (cp <= RWLJ_UTF8_2BYTE_MAX) {
+        len = 2;
+    } else if (cp <= RWLJ_UTF8_3BYTE_MAX) {
+        len = 3;
+    } else if (cp <= RWLJ_UTF8_4BYTE_MAX) {
+        len = 4;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf8_decode(rwljString s, rwljRune *rune)
+{
+    *rune = RWLJ_RUNE_INVALID;
+    isize len = 1;
+
+    if (s.len < 1) {
+        return len;
+    }
+
+    // Map leading byte
+    u8 b0 = cast(u8) s.data[0];
+    u8 leading = __rwlj_leading_type[b0];
+
+    // Invalid codepoint, skip
+    if (leading == 0xF1) {
+        return len;
+    }
+    // ASCII codepoint, skip
+    if (leading == 0xC1) {
+        *rune = b0;
+        return len;
+    }
+
+    isize size = cast(isize)(leading & 0x7);
+    if (size > s.len) {
+        return len;
+    }
+
+    rwljRange_U8 range = __rwlj_utf8_valid_ranges[leading >> 4];
+
+    // Extract continuation bytes
+    u8 b1 = cast(u8) s.data[1];
+    if (!rwlj_is_between(b1, range.min, range.max)) {
+        return len;
+    }
+    if (size == 2) {
+        *rune = cast(rwljRune)(
+            (b0 & RWLJ_UTF8_MASKL2) << 6 | (b1 & RWLJ_UTF8_MASKLCB)
+        );
+        return size;
+    }
+
+    u8 b2 = cast(u8) s.data[2];
+    if (!rwlj_is_between(b2, RWLJ_UTF8_CBLO, RWLJ_UTF8_CBHI)) {
+        return len;
+    }
+    if (size == 3) {
+        *rune = cast(rwljRune)(
+            (b0 & RWLJ_UTF8_MASKL3) << 12 | (b1 & RWLJ_UTF8_MASKLCB) << 6 |
+            (b2 & RWLJ_UTF8_MASKLCB)
+        );
+        return size;
+    }
+
+    u8 b3 = cast(u8) s.data[3];
+    if (!rwlj_is_between(b3, RWLJ_UTF8_CBLO, RWLJ_UTF8_CBHI)) {
+        return len;
+    }
+    if (size == 4) {
+        *rune = cast(rwljRune)(
+            (b0 & RWLJ_UTF8_MASKL4) << 18 | (b1 & RWLJ_UTF8_MASKLCB) << 12 |
+            (b2 & RWLJ_UTF8_MASKLCB) << 6 | (b3 & RWLJ_UTF8_MASKLCB)
+        );
+        return size;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf8_encode(rwljSlice_U8 buf, rwljRune rune)
+{
+    u8 buffer[4] = { 0 };
+    isize len = rwlj_utf8_rune_len(rune);
+    u32 cp = cast(u32) rune;
+
+    // Filter surrogates
+    if (rwlj_is_between(cp, RWLJ_UTF16_SHILO, RWLJ_UTF16_SLOHI)) {
+        goto invalid;
+    }
+
+    // ASCII
+    if (len == 1) {
+        buffer[0] = cast(u8) cp;
+    } else if (len == 2) {
+        buffer[0] = cast(u8)(cp >> 6) | RWLJ_UTF8_MASKH2;
+        buffer[1] = cast(u8)(cp & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    } else if (len == 3) {
+        buffer[0] = cast(u8)(cp >> 12) | RWLJ_UTF8_MASKH3;
+        buffer[1] = cast(u8)((cp >> 6) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[2] = cast(u8)(cp & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    } else if (len == 4) {
+        buffer[0] = cast(u8)(cp >> 18) | RWLJ_UTF8_MASKH4;
+        buffer[1] =
+            cast(u8)((cp >> 12) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[2] = cast(u8)((cp >> 6) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[3] = cast(u8)(cp & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    } else {
+    invalid:
+        len = 3;
+        buffer[0] = (RWLJ_RUNE_INVALID >> 12) | RWLJ_UTF8_MASKH3;
+        buffer[1] =
+            ((RWLJ_RUNE_INVALID >> 6) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[2] = (RWLJ_RUNE_INVALID & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    }
+    len = rwlj_min(len, buf.len);
+    rwlj_memory_copy(buf.data, buffer, cast(usize) len);
+
+    return len;
+}
+
+isize
+rwlj_utf16_rune_len(rwljRune rune)
+{
+    u32 cp = cast(u32) rune;
+    isize len = -1;
+
+    if (cp < RWLJ_UTF16_1BYTE_MAX) {
+        len = 1;
+    } else if (cp <= RWLJ_UTF16_2BYTE_MAX) {
+        len = 2;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf16_decode(rwljString16 s, rwljRune *rune)
+{
+    *rune = RWLJ_RUNE_INVALID;
+    isize len = 1;
+    if (s.len < 1) {
+        return len;
+    }
+
+    u16 w1 = rwlj_slice_get(&s, 0);
+    u16 w2 = rwlj_slice_get(&s, 1);
+
+    // Codepoint fits 2 bytes
+    if (!rwlj_is_between(w1, RWLJ_UTF16_SHILO, RWLJ_UTF16_SLOHI)) {
+        *rune = cast(rwljRune) w1;
+    } else if (
+        rwlj_is_between(w1, RWLJ_UTF16_SHILO, RWLJ_UTF16_SHIHI) &&
+        rwlj_is_between(w2, RWLJ_UTF16_SLOLO, RWLJ_UTF16_SLOHI - 1)
+    ) {
+        // Codepoints are between their respective surrogate ranges
+        *rune = cast(rwljRune)(
+            ((w1 - RWLJ_UTF16_SHILO) << 10 | (w2 - RWLJ_UTF16_SLOLO)) +
+            RWLJ_UTF16_1BYTE_MAX
+        );
+        len = 2;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf16_encode(rwljSlice_U8 buf, rwljRune rune)
+{
+    u8 buffer[4] = { 0 };
+    isize len = rwlj_utf16_rune_len(rune) * 2;
+    u32 cp = cast(u32) rune;
+
+    if (len == 2) {
+        buffer[0] = cast(u8)((cp & 0xFF00) >> 8);
+        buffer[1] = cast(u8)(cp & 0x00FF);
+    } else if (len == 4) {
+        cp -= RWLJ_UTF16_1BYTE_MAX;
+        u16 h1 = ((cp >> 10) & RWLJ_UTF16_MASK) | RWLJ_UTF16_SHILO;
+        u16 h2 = (cp & RWLJ_UTF16_MASK) | RWLJ_UTF16_SLOLO;
+
+        buffer[0] = cast(u8)((h1 & 0xFF00) >> 8);
+        buffer[1] = cast(u8)(h1 & 0x00FF);
+        buffer[2] = cast(u8)((h2 & 0xFF00) >> 8);
+        buffer[3] = cast(u8)(h2 & 0x00FF);
+    } else {
+        len = 2;
+        buffer[0] = cast(u8)((RWLJ_RUNE_INVALID & 0xFF00) >> 8);
+        buffer[1] = cast(u8)(RWLJ_RUNE_INVALID & 0x00FF);
+    }
+    len = rwlj_min(len, buf.len);
+    rwlj_memory_copy(buf.data, buffer, cast(usize) len);
+
+    return len;
 }
 
 /*
@@ -3452,6 +3772,8 @@ __rwlj_bprintf_va(
             }
         }
 
+        // TODO: LMAO I forgor to add the space padding
+
         // 0/space padding
         if (state.flags.zero) {
             isize diff = state.field_width - conv_bytes_written;
@@ -3923,26 +4245,6 @@ rwlj_time_unix_since(i64 t)
 /*
  *  Platform-specific
  */
-
-void
-rwlj_file_open(void)
-{
-}
-
-void
-rwlj_file_write(void)
-{
-}
-
-void
-rwlj_file_read(void)
-{
-}
-
-void
-rwlj_file_close(void)
-{
-}
 
 /*
  *  Testing

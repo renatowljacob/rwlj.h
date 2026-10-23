@@ -2491,6 +2491,198 @@ test_string(void)
     }
 }
 
+// TODO: Review tests
+void
+test_unicode(void)
+{
+    DESCRIBE("Unicode encoding and decoding tests");
+
+    TEST("Reports UTF-8 rune lengths at boundaries")
+    {
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x0000), 1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x007F), 1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x0080), 2);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x07FF), 2);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x0800), 3);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0xFFFF), 3);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x10000), 4);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x10FFFF), 4);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(-1), -1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x110000), -1);
+    }
+
+    TEST("Encodes and decodes representative UTF-8 runes")
+    {
+        struct {
+            rwljRune rune;
+            u8 bytes[4];
+            isize len;
+        } cases[] = {
+            { 0x0000, { 0x00 }, 1 },
+            { 0x0024, { 0x24 }, 1 },
+            { 0x00A2, { 0xC2, 0xA2 }, 2 },
+            { 0x20AC, { 0xE2, 0x82, 0xAC }, 3 },
+            { 0x1F600, { 0xF0, 0x9F, 0x98, 0x80 }, 4 },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(cases); i += 1) {
+            u8 encoded[4] = { 0 };
+            rwljSlice_U8 buffer = rwlj_slice_from_buf(encoded);
+            isize encoded_len = rwlj_utf8_encode(buffer, cases[i].rune);
+
+            rwlj_testing_expect_value(encoded_len, cases[i].len);
+            rwlj_testing_expect(
+                memcmp(encoded, cases[i].bytes, cast(usize) cases[i].len) == 0
+            );
+
+            rwljRune decoded = 0;
+            rwljString input = { cast(char *) cases[i].bytes, cases[i].len };
+            isize decoded_len = rwlj_utf8_decode(input, &decoded);
+
+            rwlj_testing_expect_value(decoded_len, cases[i].len);
+            rwlj_testing_expect_value(
+                cast(i64) decoded, cast(i64) cases[i].rune
+            ); // FAILED
+        }
+    }
+
+    TEST("Rejects malformed UTF-8 and consumes one byte")
+    {
+        u8 malformed[][4] = {
+            { 0x80 },
+            { 0xC0, 0x80 },
+            { 0xE2, 0x28, 0xA1 },
+            { 0xF0, 0x28, 0x8C, 0xBC },
+            { 0xED, 0xA0, 0x80 },
+            { 0xF4, 0x90, 0x80, 0x80 },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(malformed); i += 1) {
+            rwljRune decoded = 0;
+            rwljString input = { cast(char *) malformed[i], 4 };
+            isize decoded_len = rwlj_utf8_decode(input, &decoded);
+
+            rwlj_testing_expect_value(decoded_len, 1); // FAILED
+            rwlj_testing_expect_value(
+                cast(i64) decoded, cast(i64) RWLJ_RUNE_INVALID
+            ); // FAILED
+        }
+    }
+
+    TEST("Encodes invalid UTF-8 runes as the replacement character")
+    {
+        rwljRune invalid[] = {
+            -1,
+            0xD800,
+            0xDFFF,
+            0x110000,
+        };
+        u8 replacement[] = { 0xEF, 0xBF, 0xBD };
+
+        for (isize i = 0; i < rwlj_count_of(invalid); i += 1) {
+            u8 encoded[4] = { 0 };
+            isize encoded_len = rwlj_utf8_encode(
+                (rwljSlice_U8)rwlj_slice_from_buf(encoded), invalid[i]
+            );
+
+            rwlj_testing_expect_value(encoded_len, 3);
+            rwlj_testing_expect(
+                memcmp(encoded, replacement, rwlj_count_of(replacement)) == 0
+            );
+        }
+    }
+
+    TEST("Reports UTF-16 rune lengths at boundaries")
+    {
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x0000), 1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0xFFFF), 1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x10000), 2);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x10FFFF), 2);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(-1), -1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x110000), -1);
+    }
+
+    TEST("Encodes and decodes representative UTF-16 runes")
+    {
+        struct {
+            rwljRune rune;
+            u8 bytes[4];
+            isize len;
+        } cases[] = {
+            { 0x0000, { 0x00, 0x00 }, 2 },
+            { 0x0041, { 0x00, 0x41 }, 2 },
+            { 0x20AC, { 0x20, 0xAC }, 2 },
+            { 0x1F600, { 0xD8, 0x3D, 0xDE, 0x00 }, 4 },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(cases); i += 1) {
+            u8 encoded[4] = { 0 };
+            isize encoded_len = rwlj_utf16_encode(
+                (rwljSlice_U8)rwlj_slice_from_buf(encoded), cases[i].rune
+            );
+
+            rwlj_testing_expect_value(encoded_len, cases[i].len);
+            rwlj_testing_expect(
+                memcmp(encoded, cases[i].bytes, cast(usize) cases[i].len) == 0
+            );
+
+            u16 words[2] = { 0 };
+            for (isize j = 0; j < cases[i].len / 2; j += 1) {
+                words[j] = cast(u16)(
+                    (cast(u16) cases[i].bytes[j * 2] << 8) |
+                    cases[i].bytes[j * 2 + 1]
+                );
+            }
+
+            rwljRune decoded = 0;
+            rwljString16 input = { words, cases[i].len / 2 };
+            isize decoded_len = rwlj_utf16_decode(input, &decoded);
+
+            rwlj_testing_expect_value(decoded_len, cases[i].len / 2);
+            rwlj_testing_expect_value(
+                cast(i64) decoded, cast(i64) cases[i].rune
+            );
+        }
+    }
+
+    TEST("Rejects malformed UTF-16 surrogate sequences")
+    {
+        u16 malformed[][2] = {
+            { 0xD800, 0x0041 },
+            { 0xDC00, 0x0041 },
+            { 0xD800, 0xDFFF },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(malformed); i += 1) {
+            rwljRune decoded = 0;
+            rwljString16 input = { malformed[i], 2 };
+            isize decoded_len = rwlj_utf16_decode(input, &decoded);
+
+            rwlj_testing_expect_value(decoded_len, 1); // FAILED
+            rwlj_testing_expect_value(
+                cast(i64) decoded, cast(i64) RWLJ_RUNE_INVALID
+            ); // FAILED
+        }
+    }
+
+    TEST("Truncates encoded output to the destination buffer")
+    {
+        u8 utf8[2] = { 0 };
+        u8 utf16[3] = { 0 };
+
+        rwlj_testing_expect_value(
+            rwlj_utf8_encode((rwljSlice_U8)rwlj_slice_from_buf(utf8), 0x1F600),
+            2
+        );
+        rwlj_testing_expect_value(
+            rwlj_utf16_encode(
+                (rwljSlice_U8)rwlj_slice_from_buf(utf16), 0x1F600
+            ),
+            3
+        );
+    }
+}
+
 // clang-format off
 rwljTest_Proc test_arr[] = {
     test_math,
@@ -2500,6 +2692,7 @@ rwljTest_Proc test_arr[] = {
     test_formatting,
     test_string_builder,
     test_string,
+    test_unicode,
 };
 // clang-format on
 
