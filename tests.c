@@ -608,7 +608,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(!rwlj_slice_get(&slice, -1));
     }
@@ -618,7 +618,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(!rwlj_slice_get(&slice, slice.len));
     }
@@ -628,7 +628,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(rwlj_slice_get(&slice, 0));
     }
@@ -638,7 +638,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(rwlj_slice_get(&slice, slice.len - 1));
     }
@@ -648,7 +648,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(!rwlj_slice_set(&slice, -1, 22));
     }
@@ -658,7 +658,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(!rwlj_slice_set(&slice, slice.len, 22));
     }
@@ -668,7 +668,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(rwlj_slice_set(&slice, 0, 22));
         rwlj_testing_expect_value(rwlj_slice_get(&slice, 0), 22);
@@ -679,7 +679,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_testing_expect(rwlj_slice_set(&slice, slice.len - 1, 22));
         rwlj_testing_expect_value(rwlj_slice_get(&slice, slice.len - 1), 22);
@@ -693,8 +693,8 @@ test_slice(void)
         isize reversed_buf[] = {
             8, 7, 6, 5, 4, 3, 2, 1,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
-        rwljSlice_Isize reversed_slice = rwlj_slice_from_array(reversed_buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
+        rwljSlice_Isize reversed_slice = rwlj_slice_from_buf(reversed_buf);
 
         rwlj_slice_reverse(&slice, isize);
         for (isize i = 0; i < slice.len; i += 1) {
@@ -707,7 +707,7 @@ test_slice(void)
         isize buf[] = {
             1, 2, 3, 4, 5, 6, 7, 8,
         };
-        rwljSlice_Isize slice = rwlj_slice_from_array(buf);
+        rwljSlice_Isize slice = rwlj_slice_from_buf(buf);
 
         rwlj_slice_clear(&slice);
         for (isize i = 0; i < slice.len; i += 1) {
@@ -2068,10 +2068,10 @@ test_string_builder(void)
         rwljString expected3 = STRING("string 3...");
 
         rwljString expected_arr[3] = { expected1, expected2, expected3 };
-        rwljSlice_String expected_slice = rwlj_slice_from_array(expected_arr);
+        rwljSlice_String expected_slice = rwlj_slice_from_buf(expected_arr);
 
         rwljString arr[30] = { 0 };
-        rwljSlice_String slice = rwlj_slice_from_array(arr);
+        rwljSlice_String slice = rwlj_slice_from_buf(arr);
 
         for (isize i = 0; i < slice.len; i += 1) {
             rwlj_slice_set(
@@ -2491,6 +2491,347 @@ test_string(void)
     }
 }
 
+void
+test_unicode(void)
+{
+    DESCRIBE("Unicode encoding and decoding tests");
+
+    TEST("Reports UTF-8 rune lengths at boundaries")
+    {
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x0000), 1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x007F), 1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x0080), 2);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x07FF), 2);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x0800), 3);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0xFFFF), 3);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x10000), 4);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x10FFFF), 4);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(-1), -1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0x110000), -1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0xD800), -1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0xDBFF), -1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0xDC00), -1);
+        rwlj_testing_expect_value(rwlj_utf8_rune_len(0xDF00), -1);
+    }
+
+    TEST("Encodes and decodes representative UTF-8 runes")
+    {
+        typedef struct rwljTest_Case {
+            rwljRune rune;
+            u8 bytes[4];
+            isize len;
+        } rwljTest_Case;
+        typedef struct rwljTest_Case_Slice {
+            rwljTest_Case *test_case;
+            isize len;
+        } rwljTest_Case_Slice;
+
+        // "\0$¢€ὠ"
+        rwljTest_Case case1[] = {
+            { 0x0000, { 0x00 }, 1 },
+            { 0x0024, { 0x24 }, 1 },
+            { 0x00A2, { 0xC2, 0xA2 }, 2 },
+            { 0x20AC, { 0xE2, 0x82, 0xAC }, 3 },
+            { 0x1F600, { 0xF0, 0x9F, 0x98, 0x80 }, 4 },
+        };
+
+        // "κόσμε"
+        rwljTest_Case case2[] = {
+            // clang-format off
+            { 0x03ba, { 0xCE, 0xBA }, 2 },
+            { 0x1f79, { 0xE1, 0xBD, 0xB9 }, 3 },
+            { 0x03c3, { 0xCF, 0x83 }, 2 },
+            { 0x03bc, { 0xCE, 0xBC }, 2 },
+            { 0x03b5, { 0xCE, 0xB5 }, 2 },
+            // clang-format on
+        };
+
+        // "秋葉原電気街"
+        rwljTest_Case case3[] = {
+            // clang-format off
+            { 0x79cb, { 0xE7, 0xA7, 0x8B }, 3 },
+            { 0x8449, { 0xE8, 0x91, 0x89 }, 3 },
+            { 0x539f, { 0xE5, 0x8E, 0x9F }, 3 },
+            { 0x96fb, { 0xE9, 0x9B, 0xBB }, 3 },
+            { 0x6c17, { 0xE6, 0xB0, 0x97 }, 3 },
+            { 0x8857, { 0xE8, 0xA1, 0x97 }, 3 },
+            // clang-format on
+        };
+
+        rwljTest_Case_Slice cases[] = {
+            { case1, rwlj_count_of(case1) },
+            { case2, rwlj_count_of(case2) },
+            { case3, rwlj_count_of(case3) },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(cases); i += 1) {
+            rwljTest_Case test_case = *cases[i].test_case;
+            for (isize j = 0; j < cases[i].len; j += 1) {
+                u8 encoded[4] = { 0 };
+                rwljSlice_U8 encoded_slice = rwlj_slice_from_buf(encoded);
+                isize encoded_len =
+                    rwlj_utf8_encode_rune(encoded_slice, test_case.rune);
+
+                rwlj_testing_expect_value(encoded_len, test_case.len);
+                rwlj_testing_expect(!rwlj_memory_compare(
+                    encoded, test_case.bytes, cast(usize) test_case.len
+                ));
+
+                rwljRune decoded = 0;
+                rwljSlice_U8 bytes = { test_case.bytes, test_case.len };
+                isize decoded_len = rwlj_utf8_decode_rune(bytes, &decoded);
+
+                rwlj_testing_expect_value(decoded_len, test_case.len);
+                rwlj_testing_expect_value(
+                    cast(i64) decoded, cast(i64) test_case.rune
+                );
+            }
+        }
+    }
+
+    TEST("Rejects malformed UTF-8 and consumes one byte")
+    {
+        u8 malformed[][4] = {
+            { 0x80 },
+            { 0xC0, 0x80 },
+            { 0xE2, 0x28, 0xA1 },
+            { 0xF0, 0x28, 0x8C, 0xBC },
+            { 0xED, 0xA0, 0x80 },
+            { 0xF4, 0x90, 0x80, 0x80 },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(malformed); i += 1) {
+            rwljRune decoded = 0;
+            rwljSlice_U8 input = { malformed[i], 4 };
+            isize decoded_len = rwlj_utf8_decode_rune(input, &decoded);
+
+            rwlj_testing_expect_value(decoded_len, 1);
+            rwlj_testing_expect_value(
+                cast(i64) decoded, cast(i64) RWLJ_RUNE_INVALID
+            );
+        }
+    }
+
+    TEST("Encodes invalid UTF-8 runes as the replacement character")
+    {
+        rwljRune invalid[] = {
+            -1,
+            0xD800,
+            0xDFFF,
+            0x110000,
+        };
+        u8 replacement[] = { 0xEF, 0xBF, 0xBD };
+
+        for (isize i = 0; i < rwlj_count_of(invalid); i += 1) {
+            u8 encoded[4] = { 0 };
+            isize encoded_len = rwlj_utf8_encode_rune(
+                cast(rwljSlice_U8) rwlj_slice_from_buf(encoded), invalid[i]
+            );
+
+            rwlj_testing_expect_value(encoded_len, 3);
+            rwlj_testing_expect(!rwlj_memory_compare(
+                encoded, replacement, rwlj_count_of(replacement)
+            ));
+        }
+    }
+
+    TEST("Encodes, decodes, and validates UTF-8 slices")
+    {
+        rwljRune source[] = { 0x0041, 0x20AC, 0x1F600 };
+        u8 expected[] = {
+            0x41, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x98, 0x80,
+        };
+        u8 encoded[8] = { 0 };
+        rwljSlice_U8 encoded_slice = rwlj_slice_from_buf(encoded);
+
+        isize encoded_len = rwlj_utf8_encode(
+            encoded_slice, cast(rwljSlice_Rune) rwlj_slice_from_buf(source)
+        );
+        rwlj_testing_expect_value(encoded_len, rwlj_count_of(expected));
+        rwlj_testing_expect(
+            !rwlj_memory_compare(encoded, expected, rwlj_count_of(expected))
+        );
+        rwlj_testing_expect(rwlj_utf8_validate(cast(rwljSlice_U8){
+            encoded,
+            encoded_len,
+        }));
+
+        rwljRune decoded[3] = { 0 };
+        isize decoded_len = rwlj_utf8_decode(
+            cast(rwljSlice_Rune) rwlj_slice_from_buf(decoded),
+            cast(rwljSlice_U8){ encoded, encoded_len }
+        );
+        rwlj_testing_expect_value(decoded_len, rwlj_count_of(source));
+        rwlj_testing_expect(!rwlj_memory_compare(
+            decoded, source, cast(usize) rwlj_size_of(source)
+        ));
+
+        u8 invalid[] = { 0xC2, 0x20 };
+        rwlj_testing_expect(
+            !rwlj_utf8_validate(cast(rwljSlice_U8) rwlj_slice_from_buf(invalid))
+        );
+    }
+
+    TEST("Reports UTF-16 rune lengths at boundaries")
+    {
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x0000), 1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0xFFFF), 1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x10000), 2);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x10FFFF), 2);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(-1), -1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0x110000), -1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0xD800), -1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0xDBFF), -1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0xDC00), -1);
+        rwlj_testing_expect_value(rwlj_utf16_rune_len(0xDF00), -1);
+    }
+
+    TEST("Encodes and decodes representative UTF-16 runes")
+    {
+        struct {
+            rwljRune rune;
+            u16 dbytes[2];
+            isize len;
+        } cases[] = {
+            { 0x0000, { 0x00 }, 1 },
+            { 0x0041, { 0x0041 }, 1 },
+            { 0x20AC, { 0x20AC }, 1 },
+            { 0x1F600, { 0xD83D, 0xDE00 }, 2 },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(cases); i += 1) {
+            u16 encoded[2] = { 0 };
+            isize encoded_len = rwlj_utf16_encode_rune(
+                cast(rwljSlice_U16) rwlj_slice_from_buf(encoded), cases[i].rune
+            );
+
+            rwlj_testing_expect_value(encoded_len, cases[i].len);
+            rwlj_testing_expect(!rwlj_memory_compare(
+                encoded,
+                cases[i].dbytes,
+                cast(usize)(cases[i].len * rwlj_size_of(u16))
+            ));
+
+            u16 words[2] = { 0 };
+            for (isize j = 0; j < cases[i].len; j += 1) {
+                words[j] = cases[i].dbytes[j];
+            }
+
+            rwljRune decoded = 0;
+            rwljSlice_U16 input = { words, cases[i].len };
+            isize decoded_len = rwlj_utf16_decode_rune(input, &decoded);
+
+            rwlj_testing_expect_value(decoded_len, cases[i].len);
+            rwlj_testing_expect_value(
+                cast(i64) decoded, cast(i64) cases[i].rune
+            );
+        }
+    }
+
+    TEST("Encodes, decodes, and validates UTF-16 slices")
+    {
+        rwljRune source[] = { 0x0041, 0x20AC, 0x1F600 };
+        u16 expected[] = { 0x0041, 0x20AC, 0xD83D, 0xDE00 };
+        u16 encoded[4] = { 0 };
+
+        isize encoded_len = rwlj_utf16_encode(
+            cast(rwljSlice_U16) rwlj_slice_from_buf(encoded),
+            cast(rwljSlice_Rune) rwlj_slice_from_buf(source)
+        );
+
+        rwlj_testing_expect_value(encoded_len, rwlj_count_of(expected));
+        rwlj_testing_expect(!rwlj_memory_compare(
+            encoded, expected, cast(usize) rwlj_size_of(expected)
+        ));
+        rwlj_testing_expect(rwlj_utf16_validate(cast(rwljSlice_U16){
+            encoded,
+            encoded_len,
+        }));
+
+        rwljRune decoded[3] = { 0 };
+        isize decoded_len = rwlj_utf16_decode(
+            cast(rwljSlice_Rune) rwlj_slice_from_buf(decoded),
+            cast(rwljSlice_U16){ encoded, encoded_len }
+        );
+        rwlj_testing_expect_value(decoded_len, rwlj_count_of(source));
+        rwlj_testing_expect(!rwlj_memory_compare(
+            decoded, source, cast(usize) rwlj_size_of(source)
+        ));
+
+        u16 invalid[] = { 0xD800, 0x0041 };
+        rwlj_testing_expect(!rwlj_utf16_validate(
+            cast(rwljSlice_U16) rwlj_slice_from_buf(invalid)
+        ));
+    }
+
+    TEST("Converts between UTF-8 and UTF-16 slices")
+    {
+        u8 source8[] = {
+            0x41, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x98, 0x80,
+        };
+        u16 expected16[] = { 0x0041, 0x20AC, 0xD83D, 0xDE00 };
+        u16 converted16[4] = { 0 };
+        isize converted16_len = rwlj_utf16_from_utf8(
+            cast(rwljSlice_U16) rwlj_slice_from_buf(converted16),
+            cast(rwljSlice_U8) rwlj_slice_from_buf(source8)
+        );
+
+        rwlj_testing_expect_value(converted16_len, rwlj_count_of(expected16));
+        rwlj_testing_expect(!rwlj_memory_compare(
+            converted16, expected16, cast(usize) rwlj_size_of(expected16)
+        ));
+
+        u8 converted8[8] = { 0 };
+        isize converted8_len = rwlj_utf8_from_utf16(
+            cast(rwljSlice_U8) rwlj_slice_from_buf(converted8),
+            cast(rwljSlice_U16){ converted16, converted16_len }
+        );
+        rwlj_testing_expect_value(converted8_len, rwlj_count_of(source8));
+        rwlj_testing_expect(!rwlj_memory_compare(
+            converted8, source8, cast(usize) rwlj_size_of(source8)
+        ));
+    }
+
+    TEST("Rejects malformed UTF-16 surrogate sequences")
+    {
+        u16 malformed[][2] = {
+            { 0xD800, 0x0041 },
+            { 0xDC00, 0x0041 },
+            { 0xD800, 0xDFFF },
+        };
+
+        for (isize i = 0; i < rwlj_count_of(malformed); i += 1) {
+            rwljRune decoded = 0;
+            rwljSlice_U16 input = { malformed[i], 2 };
+            isize decoded_len = rwlj_utf16_decode_rune(input, &decoded);
+
+            rwlj_testing_expect_value(decoded_len, 1);
+            rwlj_testing_expect_value(
+                cast(i64) decoded, cast(i64) RWLJ_RUNE_INVALID
+            );
+        }
+    }
+
+    TEST("Truncates encoded output to the destination buffer")
+    {
+        u8 utf8[2] = { 0 };
+        u16 utf16[1] = { 0 };
+
+        rwlj_testing_expect_value(
+            rwlj_utf8_encode_rune(
+                cast(rwljSlice_U8) rwlj_slice_from_buf(utf8), 0x1F600
+            ),
+            2
+        );
+        rwlj_testing_expect_value(
+            rwlj_utf16_encode_rune(
+                cast(rwljSlice_U16) rwlj_slice_from_buf(utf16), 0x1F600
+            ),
+            1
+        );
+    }
+}
+
 // clang-format off
 rwljTest_Proc test_arr[] = {
     test_math,
@@ -2500,6 +2841,7 @@ rwljTest_Proc test_arr[] = {
     test_formatting,
     test_string_builder,
     test_string,
+    test_unicode,
 };
 // clang-format on
 

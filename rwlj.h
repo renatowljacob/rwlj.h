@@ -53,10 +53,17 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <time.h>
-#include <windows.h>
-#endif
 
-// Synchronization facilities (atomic, intrinsics)
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#define WIN32_MEAN_AND_LEAN
+#define VC_EXTRALEAN
+#include <windows.h>
+#undef NOMINMAX
+#undef WIN32_LEAN_AND_MEAN
+#undef WIN32_MEAN_AND_LEAN
+#undef VC_EXTRALEAN
+#endif
 
 // TODO: basic Linux/Windows IO and networking
 
@@ -81,6 +88,7 @@
 #define global     static
 #define internal   static
 #define persistent static
+#define read_only  static const
 
 #define rwlj_concat(x, y)  x##y
 #define rwlj_concat_(x, y) x##_##y
@@ -278,9 +286,26 @@ rwlj_static_assert(sizeof(f64) == 8);
         (y) = __temp;                                                          \
     } while (false)
 
-#define rwlj_max(x, y)          (x > y ? x : y)
-#define rwlj_min(x, y)          (x < y ? x : y)
-#define rwlj_clamp(x, min, max) (rwlj_max(rwlj_min(x, max), min))
+#define rwlj_max(x, y)               (x > y ? x : y)
+#define rwlj_min(x, y)               (x < y ? x : y)
+#define rwlj_clamp(x, min, max)      (rwlj_max(rwlj_min(x, max), min))
+#define rwlj_is_between(x, min, max) ((min) <= (x) && (x) <= (max))
+
+#define GENERIC_RANGE(T, name)                                                 \
+    typedef struct rwlj_concat_(rwljRange, name) {                             \
+        T min;                                                                 \
+        T max;                                                                 \
+    } rwlj_concat_(rwljRange, name)
+GENERIC_RANGE(u8, U8);
+GENERIC_RANGE(u16, U16);
+GENERIC_RANGE(u32, U32);
+GENERIC_RANGE(u64, U64);
+GENERIC_RANGE(usize, Usize);
+GENERIC_RANGE(i8, I8);
+GENERIC_RANGE(i16, I16);
+GENERIC_RANGE(i32, I32);
+GENERIC_RANGE(i64, I64);
+GENERIC_RANGE(isize, Isize);
 
 #define rwlj_align_pow2(x, align) (((x) + (align) - 1) & (~((align) - 1)))
 #define rwlj_is_pow2(x)           ((x) && ((x) & ((x) - 1)) == 0)
@@ -417,8 +442,6 @@ typedef i32 rwljMemoryOrder;
 #define rwlj_atomic_thread_fence(order) atomic_thread_fence(order)
 
 #define rwlj_atomic_signal_fence(order) atomic_signal_fence(order)
-
-// TODO: Implement virtual memory allocation procedures
 
 /*
  *  Virtual Memory Allocation
@@ -558,7 +581,6 @@ typedef isize rwljArray_Kind;
         T *data;                                                               \
         isize len;                                                             \
     } rwlj_concat_(rwljSlice, name)
-
 GENERIC_ARRAY(char, Char);
 GENERIC_ARRAY(i8, I8);
 GENERIC_ARRAY(i16, I16);
@@ -580,10 +602,11 @@ GENERIC_ARRAY(b64, B64);
 GENERIC_ARRAY(bsize, Bsize);
 GENERIC_ARRAY(void, Void);
 
-#define rwlj_slice(ptr, start, end)                                            \
+#define rwlj_slice_from_ptr(ptr, start, end)                                   \
     { &(ptr)[start], rwlj_max((end) - (start), 0) }
-#define rwlj_slice_from_array(array) rwlj_slice(array, 0, rwlj_count_of(array))
-#define rwlj_slice_from_buf(buf)     rwlj_slice_from_array(buf)
+#define rwlj_slice(slice, start, end)                                          \
+    rwlj_slice_from_ptr((slice)->data, (start), (end))
+#define rwlj_slice_from_buf(buf) rwlj_slice_from_ptr(buf, 0, rwlj_count_of(buf))
 
 #define rwlj_slice_unpack(slice) (slice)->data, (slice)->len
 
@@ -766,8 +789,12 @@ typedef struct rwljString {
     char *data;
     isize len;
 } rwljString;
-
+typedef struct rwljString16 {
+    u16 *data;
+    isize len;
+} rwljString16;
 GENERIC_ARRAY(rwljString, String);
+GENERIC_ARRAY(rwljString16, String16);
 
 #define STRING(string) cast(rwljString){ string, rwlj_size_of(string) - 1 }
 
@@ -776,10 +803,74 @@ GENERIC_ARRAY(rwljString, String);
     {                                                                          \
         cast(char *) & (ptr)[start], rwlj_max((end) - (start), 0)              \
     }
-
-#define rwlj_string(str, start, end) rwlj_string_from_ptr(str.data, start, end)
-
+#define rwlj_string(str, start, end)  rwlj_string_from_ptr(str.data, start, end)
 #define rwlj_string_from_slice(slice) rwlj_string(slice, 0, (slice)->len)
+
+/*
+ *  UTF-8
+ */
+
+typedef i32 rwljRune;
+GENERIC_ARRAY(rwljRune, Rune);
+
+#define RWLJ_RUNE_INVALID 0xFFFD
+#define RWLJ_RUNE_MAX     0x10FFFF
+
+// Maximum character representation per byte
+#define RWLJ_UTF8_1BYTE_MAX (rwlj_bit(7) - 1)
+#define RWLJ_UTF8_2BYTE_MAX (rwlj_bit(11) - 1)
+#define RWLJ_UTF8_3BYTE_MAX (rwlj_bit(16) - 1)
+#define RWLJ_UTF8_4BYTE_MAX RWLJ_RUNE_MAX
+
+// Lower bits masks
+#define RWLJ_UTF8_MASKL2  0x1F
+#define RWLJ_UTF8_MASKL3  0x0F
+#define RWLJ_UTF8_MASKL4  0x07
+#define RWLJ_UTF8_MASKLCB 0x3F
+
+// Higher bits masks
+#define RWLJ_UTF8_MASKH2  0xC0
+#define RWLJ_UTF8_MASKH3  0xE0
+#define RWLJ_UTF8_MASKH4  0xF0
+#define RWLJ_UTF8_MASKHCB 0x80
+
+// Continuation bytes range
+#define RWLJ_UTF8_CBLO 0x80
+#define RWLJ_UTF8_CBHI 0xBF
+
+// Surrogates range
+// High-half
+#define RWLJ_UTF16_SHILO 0xD800
+#define RWLJ_UTF16_SHIHI 0xDBFF
+
+// Low-half
+#define RWLJ_UTF16_SLOLO 0xDC00
+#define RWLJ_UTF16_SLOHI 0xDFFF
+
+// Maximum character representation per byte
+#define RWLJ_UTF16_2BYTE_MAX 0x010000
+#define RWLJ_UTF16_4BYTE_MAX RWLJ_RUNE_MAX
+
+#define RWLJ_UTF16_MASK 0x03FF
+
+bool rwlj_unicode_is_surrogate(rwljRune rune);
+
+bsize rwlj_utf8_rune_len(rwljRune rune);
+isize rwlj_utf8_encode_rune(rwljSlice_U8 buf, rwljRune rune);
+isize rwlj_utf8_decode_rune(rwljSlice_U8 s, rwljRune *rune);
+isize rwlj_utf8_encode(rwljSlice_U8 dst, rwljSlice_Rune src);
+isize rwlj_utf8_decode(rwljSlice_Rune dst, rwljSlice_U8 src);
+bool rwlj_utf8_validate(rwljSlice_U8 s);
+
+bsize rwlj_utf16_rune_len(rwljRune rune);
+isize rwlj_utf16_encode_rune(rwljSlice_U16 buf, rwljRune rune);
+isize rwlj_utf16_decode_rune(rwljSlice_U16 s, rwljRune *rune);
+isize rwlj_utf16_encode(rwljSlice_U16 dst, rwljSlice_Rune src);
+isize rwlj_utf16_decode(rwljSlice_Rune dst, rwljSlice_U16 src);
+bool rwlj_utf16_validate(rwljSlice_U16 s);
+
+isize rwlj_utf8_from_utf16(rwljSlice_U8 dst, rwljSlice_U16 src);
+isize rwlj_utf16_from_utf8(rwljSlice_U16 dst, rwljSlice_U8 src);
 
 // rwljString procedures
 bsize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
@@ -910,8 +1001,6 @@ rwljString rwlj_sbprintln(rwljString_Builder *sb, rwljString s);
  *  Time
  */
 
-// TODO: Port this to win32
-
 typedef i64 rwljDuration;
 typedef i64 rwljTime;
 
@@ -930,6 +1019,25 @@ i64 rwlj_time_unix_now(void);
 i64 rwlj_time_unix_diff(i64 t1, i64 t2);
 i64 rwlj_time_unix_since(i64 time);
 rwljDuration rwlj_time_sleep(rwljDuration time);
+
+/*
+ *  Platform-specific
+ */
+
+// TODO: UTF-8 from/to UTF-16 procedures
+
+typedef struct rwljFile {
+#ifdef RWLJ_OS_LINUX
+    i32 handle;
+#else // RWLJ_OS_WINDOWS
+    HANDLE handle;
+#endif
+} rwljFile;
+
+// rwljFile rwlj_file_open(rwljString path);
+// void rwlj_file_write(void);
+// void rwlj_file_read(void);
+// void rwlj_file_close(rwljFile file);
 
 #endif // RWLJ_H
 
@@ -1317,6 +1425,9 @@ __rwlj_arena_init_aligned(
     rwlj_assert(commit_size == 0 || alignment <= commit_size);
 
     switch (cast(enum rwljArena_Kind) kind) {
+    default: {
+        rwlj_assert_fail("invalid Arena_Kind: %ld", kind);
+    }
     case RWLJ_ARENA_STATIC: {
         if (reserve_size == 0) {
             reserve_size = RWLJ_DEFAULT_ARENA_STATIC_RESERVE_SIZE;
@@ -1364,9 +1475,6 @@ __rwlj_arena_init_aligned(
 
         break;
     }
-    default: {
-        rwlj_assert_fail("invalid Arena_Kind: %ld", kind);
-    }
     }
 }
 
@@ -1383,6 +1491,11 @@ rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment)
     usize used = arena->buf->used;
     void *allocation = rwlj_memory_buffer_alloc(arena->buf, size, alignment);
     switch (cast(enum rwljArena_Kind) arena->kind) {
+    default: {
+        rwlj_assert_fail("Invalid rwljArena_Kind");
+
+        break;
+    }
     case RWLJ_ARENA_STATIC: {
         if (allocation != NULL) {
             arena->total_used = arena->buf->used;
@@ -1432,11 +1545,6 @@ rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment)
         if (allocation != NULL) {
             arena->total_used = arena->buf->used;
         }
-
-        break;
-    }
-    default: {
-        rwlj_assert_fail("Invalid rwljArena_Kind");
 
         break;
     }
@@ -1643,6 +1751,476 @@ __rwlj_array_resize(rwljArray_I64 *array, isize new_capacity)
     }
 
     return true;
+}
+
+/*
+ *  Unicode
+ */
+
+bool
+rwlj_unicode_is_surrogate(rwljRune rune)
+{
+    return rwlj_is_between(cast(u32) rune, RWLJ_UTF16_SHILO, RWLJ_UTF16_SLOHI);
+}
+
+// clang-format off
+
+// Leading byte table lookup. If 0xC1, it's an ASCII byte. If 0xF1, it's a
+// invalid byte. Otherwise, a byte whose valid range is encoded in the first 4
+// bits, while its codepoint size is in the last 4
+u8 const __rwlj_leading_type[256] = {
+	[0x00] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x10] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x20] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x30] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x40] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x50] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x60] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x70] = 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+	[0x80] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0x90] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0xA0] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0xB0] = 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+	[0xC0] = 0xF1, 0xF1, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+	[0xD0] = 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+	[0xE0] = 0x13, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x23, 0x03, 0x03,
+	[0xF0] = 0x34, 0x04, 0x04, 0x04, 0x44, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1,
+};
+// clang-format on
+
+rwljRange_U8 __rwlj_utf8_valid_ranges[] = {
+    { .min = RWLJ_UTF8_CBLO, .max = RWLJ_UTF8_CBHI },
+    { .min = 0xA0, .max = RWLJ_UTF8_CBHI },
+    { .min = RWLJ_UTF8_CBLO, .max = 0x9F },
+    { .min = 0x90, .max = RWLJ_UTF8_CBHI },
+    { .min = RWLJ_UTF8_CBLO, .max = 0x8F },
+};
+
+bsize
+rwlj_utf8_rune_len(rwljRune rune)
+{
+    u32 cp = cast(u32) rune;
+    isize len = -1;
+
+    if (cp <= RWLJ_UTF8_1BYTE_MAX) {
+        len = 1;
+    } else if (cp <= RWLJ_UTF8_2BYTE_MAX) {
+        len = 2;
+    } else if (rwlj_unicode_is_surrogate(rune)) {
+        // Invalid codepoint
+    } else if (cp <= RWLJ_UTF8_3BYTE_MAX) {
+        len = 3;
+    } else if (cp <= RWLJ_UTF8_4BYTE_MAX) {
+        len = 4;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf8_encode_rune(rwljSlice_U8 buf, rwljRune rune)
+{
+    u8 buffer[4] = { 0 };
+    isize len = rwlj_utf8_rune_len(rune);
+    u32 cp = cast(u32) rune;
+
+    if (len == 1) {
+        // ASCII
+
+        buffer[0] = cast(u8) cp;
+    } else if (len == 2) {
+        buffer[0] = cast(u8)(cp >> 6) | RWLJ_UTF8_MASKH2;
+        buffer[1] = cast(u8)(cp & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    } else if (len == 3) {
+        buffer[0] = cast(u8)(cp >> 12) | RWLJ_UTF8_MASKH3;
+        buffer[1] = cast(u8)((cp >> 6) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[2] = cast(u8)(cp & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    } else if (len == 4) {
+        buffer[0] = cast(u8)(cp >> 18) | RWLJ_UTF8_MASKH4;
+        buffer[1] =
+            cast(u8)((cp >> 12) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[2] = cast(u8)((cp >> 6) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[3] = cast(u8)(cp & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    } else {
+        // Invalid
+
+        len = 3;
+        buffer[0] = (RWLJ_RUNE_INVALID >> 12) | RWLJ_UTF8_MASKH3;
+        buffer[1] =
+            ((RWLJ_RUNE_INVALID >> 6) & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+        buffer[2] = (RWLJ_RUNE_INVALID & RWLJ_UTF8_MASKLCB) | RWLJ_UTF8_MASKHCB;
+    }
+    len = rwlj_min(len, buf.len);
+    rwlj_memory_copy(buf.data, buffer, cast(usize) len);
+
+    return len;
+}
+
+isize
+rwlj_utf8_decode_rune(rwljSlice_U8 buf, rwljRune *rune)
+{
+    *rune = RWLJ_RUNE_INVALID;
+    isize len = 1;
+
+    if (buf.len < 1) {
+        return len;
+    }
+
+    // Map leading byte
+    u8 b0 = buf.data[0];
+    u8 leading = __rwlj_leading_type[b0];
+
+    // Invalid codepoint, skip
+    if (leading == 0xF1) {
+        return len;
+    }
+    // ASCII codepoint, skip
+    if (leading == 0xC1) {
+        *rune = b0;
+        return len;
+    }
+
+    isize size = cast(isize)(leading & 0x07);
+    if (size > buf.len) {
+        return len;
+    }
+
+    rwljRange_U8 range = __rwlj_utf8_valid_ranges[leading >> 4];
+
+    // Extract continuation bytes
+    u8 b1 = buf.data[1];
+    if (!rwlj_is_between(b1, range.min, range.max)) {
+        return len;
+    }
+    if (size == 2) {
+        *rune = cast(rwljRune)(
+            (b0 & RWLJ_UTF8_MASKL2) << 6 | (b1 & RWLJ_UTF8_MASKLCB)
+        );
+        return size;
+    }
+
+    u8 b2 = buf.data[2];
+    if (!rwlj_is_between(b2, RWLJ_UTF8_CBLO, RWLJ_UTF8_CBHI)) {
+        return len;
+    }
+    if (size == 3) {
+        *rune = cast(rwljRune)(
+            (b0 & RWLJ_UTF8_MASKL3) << 12 | (b1 & RWLJ_UTF8_MASKLCB) << 6 |
+            (b2 & RWLJ_UTF8_MASKLCB)
+        );
+        return size;
+    }
+
+    u8 b3 = buf.data[3];
+    if (!rwlj_is_between(b3, RWLJ_UTF8_CBLO, RWLJ_UTF8_CBHI)) {
+        return len;
+    }
+    if (size == 4) {
+        *rune = cast(rwljRune)(
+            (b0 & RWLJ_UTF8_MASKL4) << 18 | (b1 & RWLJ_UTF8_MASKLCB) << 12 |
+            (b2 & RWLJ_UTF8_MASKLCB) << 6 | (b3 & RWLJ_UTF8_MASKLCB)
+        );
+        return size;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf8_encode(rwljSlice_U8 dst, rwljSlice_Rune src)
+{
+    isize dst_len = 0;
+    isize src_len = 0;
+    while (dst_len < dst.len && src_len < src.len) {
+        // ASCII
+        if (src.data[src_len] <= cast(u8) RWLJ_UTF8_1BYTE_MAX) {
+            dst.data[dst_len] = cast(u8) src.data[src_len];
+            dst_len += 1;
+            src_len += 1;
+
+            continue;
+        }
+
+        dst_len += rwlj_utf8_encode_rune(
+            cast(rwljSlice_U8) rwlj_slice(&dst, dst_len, dst.len),
+            src.data[src_len]
+        );
+        src_len += 1;
+    }
+
+    return dst_len;
+}
+
+isize
+rwlj_utf8_decode(rwljSlice_Rune dst, rwljSlice_U8 src)
+{
+    isize dst_len = 0;
+    isize src_len = 0;
+    while (dst_len < dst.len && src_len < src.len) {
+        // ASCII
+        if (src.data[src_len] <= cast(u8) RWLJ_UTF8_1BYTE_MAX) {
+            dst.data[dst_len] = src.data[src_len];
+            src_len += 1;
+            dst_len += 1;
+
+            continue;
+        }
+
+        src_len += rwlj_utf8_decode_rune(
+            cast(rwljSlice_U8) rwlj_slice(&src, src_len, src.len),
+            &dst.data[dst_len]
+        );
+        dst_len += 1;
+    }
+
+    return dst_len;
+}
+
+bool
+rwlj_utf8_validate(rwljSlice_U8 s)
+{
+    isize i = 0;
+    while (i < s.len) {
+        u8 b0 = cast(u8) s.data[i];
+        u8 leading = __rwlj_leading_type[b0];
+        if (leading == 0xF1) {
+            return false;
+        }
+        if (leading == 0xC1) {
+            i += 1;
+
+            continue;
+        }
+        isize size = cast(isize)(leading & 0x07);
+        if (i + size > s.len) {
+            return false;
+        }
+
+        rwljRange_U8 range = __rwlj_utf8_valid_ranges[leading >> 4];
+
+        u8 b1 = cast(u8) s.data[i + 1];
+        if (!rwlj_is_between(b1, range.min, range.max)) {
+            return false;
+        }
+        if (size == 2) {
+            i += size;
+
+            continue;
+        }
+
+        u8 b2 = cast(u8) s.data[i + 2];
+        if (!rwlj_is_between(b2, RWLJ_UTF8_CBLO, RWLJ_UTF8_CBHI)) {
+            return false;
+        }
+        if (size == 3) {
+            i += size;
+
+            continue;
+        }
+
+        u8 b3 = cast(u8) s.data[i + 3];
+        if (!rwlj_is_between(b3, RWLJ_UTF8_CBLO, RWLJ_UTF8_CBHI)) {
+            return false;
+        }
+        if (size == 4) {
+            i += size;
+
+            continue;
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
+bsize
+rwlj_utf16_rune_len(rwljRune rune)
+{
+    u32 cp = cast(u32) rune;
+    isize len = -1;
+
+    if (rwlj_unicode_is_surrogate(rune)) {
+        // Invalid codepoint
+    } else if (cp < RWLJ_UTF16_2BYTE_MAX) {
+        len = 1;
+    } else if (cp <= RWLJ_UTF16_4BYTE_MAX) {
+        len = 2;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf16_encode_rune(rwljSlice_U16 buf, rwljRune rune)
+{
+    u16 buffer[2] = { 0 };
+    isize len = rwlj_utf16_rune_len(rune);
+    u32 cp = cast(u32) rune;
+
+    if (len == 1) {
+        buffer[0] = cast(u16) cp;
+    } else if (len == 2) {
+        cp -= RWLJ_UTF16_2BYTE_MAX;
+        buffer[0] = ((cp >> 10) & RWLJ_UTF16_MASK) | RWLJ_UTF16_SHILO;
+        buffer[1] = (cp & RWLJ_UTF16_MASK) | RWLJ_UTF16_SLOLO;
+    } else {
+        len = 1;
+        buffer[0] = cast(u16) RWLJ_RUNE_INVALID;
+    }
+    len = rwlj_min(len, buf.len);
+    rwlj_memory_copy(buf.data, buffer, cast(usize) len * 2);
+
+    return len;
+}
+
+isize
+rwlj_utf16_decode_rune(rwljSlice_U16 s, rwljRune *rune)
+{
+    *rune = RWLJ_RUNE_INVALID;
+    isize len = 1;
+    if (s.len < 1) {
+        return len;
+    }
+
+    u16 w1 = rwlj_slice_get(&s, 0);
+    u16 w2 = rwlj_slice_get(&s, 1);
+    if (!rwlj_unicode_is_surrogate(cast(rwljRune) w1)) {
+        *rune = cast(rwljRune) w1;
+    } else if (
+        rwlj_is_between(w1, RWLJ_UTF16_SHILO, RWLJ_UTF16_SHIHI) &&
+        rwlj_is_between(w2, RWLJ_UTF16_SLOLO, RWLJ_UTF16_SLOHI - 1)
+    ) {
+        *rune = cast(rwljRune)(
+            ((w1 - RWLJ_UTF16_SHILO) << 10 | (w2 - RWLJ_UTF16_SLOLO)) +
+            RWLJ_UTF16_2BYTE_MAX
+        );
+        len = 2;
+    }
+
+    return len;
+}
+
+isize
+rwlj_utf16_encode(rwljSlice_U16 dst, rwljSlice_Rune src)
+{
+    isize dst_len = 0;
+    isize src_len = 0;
+
+    while (dst_len < dst.len && src_len < src.len) {
+        if (src.data[src_len] < cast(u16) RWLJ_UTF16_2BYTE_MAX) {
+            dst.data[dst_len] = cast(u16) src.data[src_len];
+            dst_len += 1;
+            src_len += 1;
+
+            continue;
+        }
+
+        dst_len += rwlj_utf16_encode_rune(
+            cast(rwljSlice_U16) rwlj_slice(&dst, dst_len, dst.len),
+            src.data[src_len]
+        );
+        src_len += 1;
+    }
+
+    return dst_len;
+}
+
+isize
+rwlj_utf16_decode(rwljSlice_Rune dst, rwljSlice_U16 src)
+{
+    isize dst_len = 0;
+    isize src_len = 0;
+    while (dst_len < dst.len && src_len < src.len) {
+        if (!rwlj_unicode_is_surrogate(cast(rwljRune) src.data[src_len])) {
+            dst.data[dst_len] = cast(rwljRune) src.data[src_len];
+            src_len += 1;
+            dst_len += 1;
+
+            continue;
+        }
+
+        src_len += rwlj_utf16_decode_rune(
+            cast(rwljSlice_U16) rwlj_slice(&src, src_len, src.len),
+            &dst.data[dst_len]
+        );
+        dst_len += 1;
+    }
+
+    return dst_len;
+}
+
+bool
+rwlj_utf16_validate(rwljSlice_U16 s)
+{
+    isize i = 0;
+    while (i < s.len) {
+        u16 w1 = rwlj_slice_get(&s, i);
+        u16 w2 = rwlj_slice_get(&s, i + 1);
+        if (!rwlj_unicode_is_surrogate(cast(rwljRune) w1)) {
+            i += 1;
+        } else if (
+            rwlj_is_between(w1, RWLJ_UTF16_SHILO, RWLJ_UTF16_SHIHI) &&
+            rwlj_is_between(w2, RWLJ_UTF16_SLOLO, RWLJ_UTF16_SLOHI - 1)
+        ) {
+            i += 2;
+        } else {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+isize
+rwlj_utf8_from_utf16(rwljSlice_U8 dst, rwljSlice_U16 src)
+{
+    isize dst_len = 0;
+    isize src_len = 0;
+    rwljRune rune = 0;
+    while (dst_len < dst.len && src_len < src.len) {
+        while (src.data[src_len] <= cast(u16) RWLJ_UTF8_1BYTE_MAX) {
+            dst.data[dst_len] = cast(u8) src.data[src_len];
+            src_len += 1;
+            dst_len += 1;
+        }
+
+        src_len += rwlj_utf16_decode_rune(
+            cast(rwljSlice_U16) rwlj_slice(&src, src_len, src.len), &rune
+        );
+        dst_len += rwlj_utf8_encode_rune(
+            cast(rwljSlice_U8) rwlj_slice(&dst, dst_len, dst.len), rune
+        );
+    }
+
+    return dst_len;
+}
+
+isize
+rwlj_utf16_from_utf8(rwljSlice_U16 dst, rwljSlice_U8 src)
+{
+    isize dst_len = 0;
+    isize src_len = 0;
+    rwljRune rune = 0;
+
+    while (dst_len < dst.len && src_len < src.len) {
+        if (src.data[src_len] <= cast(u8) RWLJ_UTF8_1BYTE_MAX) {
+            dst.data[dst_len] = cast(u16) src.data[src_len];
+            src_len += 1;
+            dst_len += 1;
+
+            continue;
+        }
+
+        src_len += rwlj_utf8_decode_rune(
+            cast(rwljSlice_U8) rwlj_slice(&src, src_len, src.len), &rune
+        );
+        dst_len += rwlj_utf16_encode_rune(
+            cast(rwljSlice_U16) rwlj_slice(&dst, dst_len, dst.len), rune
+        );
+    }
+
+    return dst_len;
 }
 
 /*
@@ -1890,7 +2468,7 @@ rwlj_write_i64(rwljSlice_U8 buf, i64 number)
         bytes_written += 1;
     } while (bytes_written < buf.len && n > 0);
 
-    rwljSlice_U8 slice = rwlj_slice(buf.data, start, bytes_written);
+    rwljSlice_U8 slice = rwlj_slice(&buf, start, bytes_written);
     rwlj_slice_reverse(&slice, u8);
 
     return bytes_written;
@@ -1902,6 +2480,8 @@ rwlj_write_u64(rwljSlice_U8 buf, u64 number, u8 fmt)
     isize bytes_written = 0;
     usize base = 10;
     switch (fmt) {
+    default:
+        rwlj_not_implemented();
     case 'b':
         base = 2;
         break;
@@ -1914,8 +2494,6 @@ rwlj_write_u64(rwljSlice_U8 buf, u64 number, u8 fmt)
     case 'x':
         base = 16;
         break;
-    default:
-        rwlj_not_implemented();
     }
     isize start = bytes_written;
 
@@ -1946,7 +2524,7 @@ rwlj_write_u64(rwljSlice_U8 buf, u64 number, u8 fmt)
         } while (bytes_written < buf.len && number > 0);
     }
 
-    rwljSlice_U8 slice = rwlj_slice(buf.data, start, bytes_written);
+    rwljSlice_U8 slice = rwlj_slice(&buf, start, bytes_written);
     rwlj_slice_reverse(&slice, u8);
 
     return bytes_written;
@@ -3325,7 +3903,7 @@ __rwlj_bprintf_va(
 
             conv_bytes_written += rwlj_write_u64(
                 cast(rwljSlice_U8)
-                    rwlj_slice(conv.data, conv_bytes_written, conv.len),
+                    rwlj_slice(&conv, conv_bytes_written, conv.len),
                 value.u,
                 cast(u8) string[i]
             );
@@ -3354,8 +3932,7 @@ __rwlj_bprintf_va(
             void *addr = va_arg(ap, void *);
             if (addr == NULL) {
                 bytes_written += rwlj_write_string(
-                    cast(rwljSlice_U8)
-                        rwlj_slice(buf.data, bytes_written, buf.len),
+                    cast(rwljSlice_U8) rwlj_slice(&buf, bytes_written, buf.len),
                     STRING("<nil>")
                 );
 
@@ -3368,8 +3945,7 @@ __rwlj_bprintf_va(
             conv.data[1] = ptr_fmt;
             conv_bytes_written += 2;
             conv_bytes_written += rwlj_write_u64(
-                (rwljSlice_U8)
-                    rwlj_slice(conv.data, conv_bytes_written, conv.len),
+                (rwljSlice_U8)rwlj_slice(&conv, conv_bytes_written, conv.len),
                 value.u,
                 ptr_fmt
             );
@@ -3386,7 +3962,7 @@ __rwlj_bprintf_va(
                 s, 0, rwlj_cstring_len(s, buf.len - bytes_written)
             );
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8)rwlj_slice(buf.data, bytes_written, buf.len), str
+                (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), str
             );
 
             continue;
@@ -3394,7 +3970,7 @@ __rwlj_bprintf_va(
         case 'S': {
             rwljString s = va_arg(ap, rwljString);
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8)rwlj_slice(buf.data, bytes_written, buf.len), s
+                (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), s
             );
 
             continue;
@@ -3403,8 +3979,7 @@ __rwlj_bprintf_va(
             rwljString boolean =
                 va_arg(ap, int) ? STRING("true") : STRING("false");
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8)rwlj_slice(buf.data, bytes_written, buf.len),
-                boolean
+                (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), boolean
             );
 
             continue;
@@ -3429,6 +4004,8 @@ __rwlj_bprintf_va(
                 state.field_width -= 1;
             }
         }
+
+        // TODO: LMAO I forgor to add the space padding
 
         // 0/space padding
         if (state.flags.zero) {
@@ -3659,7 +4236,8 @@ rwlj_string_builder_write_i64(rwljString_Builder *sb, i64 number)
 {
     isize start = sb->len;
     sb->len += rwlj_write_i64(
-        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
+        cast(rwljSlice_U8)
+            rwlj_slice_from_ptr(cast(u8 *) sb->buf, start, sb->capacity),
         number
     );
 
@@ -3671,7 +4249,8 @@ rwlj_string_builder_write_u64(rwljString_Builder *sb, u64 number, u8 fmt)
 {
     isize start = sb->len;
     sb->len += rwlj_write_u64(
-        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
+        cast(rwljSlice_U8)
+            rwlj_slice_from_ptr(cast(u8 *) sb->buf, start, sb->capacity),
         number,
         fmt
     );
@@ -3689,7 +4268,8 @@ rwlj_string_builder_write_f64(
 {
     isize start = sb->len;
     sb->len += rwlj_write_f64(
-        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
+        cast(rwljSlice_U8)
+            rwlj_slice_from_ptr(cast(u8 *) sb->buf, start, sb->capacity),
         number,
         fmt,
         precision
@@ -3703,7 +4283,8 @@ rwlj_string_builder_write_string(rwljString_Builder *sb, rwljString s)
 {
     isize start = sb->len;
     sb->len += rwlj_write_string(
-        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
+        cast(rwljSlice_U8)
+            rwlj_slice_from_ptr(cast(u8 *) sb->buf, start, sb->capacity),
         s
     );
 
@@ -3737,7 +4318,8 @@ rwlj_sbprintf(rwljString_Builder *sb, char const *fmt, ...)
 
     va_start(ap, fmt);
     sb->len += __rwlj_bprintf_va(
-        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
+        cast(rwljSlice_U8)
+            rwlj_slice_from_ptr(cast(u8 *) sb->buf, start, sb->capacity),
         false,
         fmt,
         ap
@@ -3755,7 +4337,8 @@ rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...)
 
     va_start(ap, fmt);
     sb->len += __rwlj_bprintf_va(
-        cast(rwljSlice_U8) rwlj_slice(cast(u8 *) sb->buf, start, sb->capacity),
+        cast(rwljSlice_U8)
+            rwlj_slice_from_ptr(cast(u8 *) sb->buf, start, sb->capacity),
         true,
         fmt,
         ap
@@ -3768,7 +4351,8 @@ rwlj_sbprintfln(rwljString_Builder *sb, char const *fmt, ...)
 rwljString
 rwlj_sbprint(rwljString_Builder *sb, rwljString s)
 {
-    rwljSlice_U8 buf = rwlj_slice(cast(u8 *) sb->buf, sb->len, sb->capacity);
+    rwljSlice_U8 buf =
+        rwlj_slice_from_ptr(cast(u8 *) sb->buf, sb->len, sb->capacity);
     isize bytes_written = rwlj_bprint(buf, s);
 
     return rwlj_string_from_ptr(sb->buf, 0, bytes_written);
@@ -3777,7 +4361,8 @@ rwlj_sbprint(rwljString_Builder *sb, rwljString s)
 rwljString
 rwlj_sbprintln(rwljString_Builder *sb, rwljString s)
 {
-    rwljSlice_U8 buf = rwlj_slice(cast(u8 *) sb->buf, sb->len, sb->capacity);
+    rwljSlice_U8 buf =
+        rwlj_slice_from_ptr(cast(u8 *) sb->buf, sb->len, sb->capacity);
     isize bytes_written = rwlj_bprint(buf, s);
 
     if (rwlj_slice_set(&buf, bytes_written, '\n')) {
@@ -3865,6 +4450,7 @@ rwlj_time_unix_now(void)
     return 0;
 }
 
+// TODO: Implement this
 rwljDuration
 rwlj_time_sleep(rwljDuration time)
 {
@@ -3896,6 +4482,10 @@ rwlj_time_unix_since(i64 t)
 {
     return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
 }
+
+/*
+ *  Platform-specific
+ */
 
 /*
  *  Testing
