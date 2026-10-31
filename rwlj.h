@@ -1034,10 +1034,10 @@ typedef struct rwljFile {
 #endif
 } rwljFile;
 
-// rwljFile rwlj_file_open(rwljString path);
-// void rwlj_file_write(void);
-// void rwlj_file_read(void);
-// void rwlj_file_close(rwljFile file);
+rwljFile rwlj_file_open(rwljString path);
+void rwlj_file_write(void);
+void rwlj_file_read(void);
+void rwlj_file_close(rwljFile file);
 
 #endif // RWLJ_H
 
@@ -4427,7 +4427,7 @@ rwlj_time_sleep(rwljDuration time)
 
     return remaining.tv_sec * RWLJ_TIME_SECOND + remaining.tv_nsec;
 }
-#elif defined(RWLJ_OS_WINDOWS)
+#else  // RWLJ_OS_WINDOWS
 rwljTime
 rwlj_time_now(void)
 {
@@ -4457,7 +4457,7 @@ rwlj_time_sleep(rwljDuration time)
     rwlj_unused(time);
     rwlj_not_implemented();
 }
-#endif // RWLJ_OS_LINUX
+#endif // RWLJ_OS_WINDOWS
 
 rwljDuration
 rwlj_time_diff(rwljTime t1, rwljTime t2)
@@ -4484,8 +4484,50 @@ rwlj_time_unix_since(i64 t)
 }
 
 /*
- *  Platform-specific
+ *  IO
  */
+
+#ifdef RWLJ_OS_LINUX
+rwljFile
+rwlj_file_open(rwljString path)
+{
+}
+
+void
+rwlj_file_write(void)
+{
+}
+
+void
+rwlj_file_read(void)
+{
+}
+
+void
+rwlj_file_close(rwljFile file)
+{
+}
+#else // RWLJ_OS_WINDOWS
+rwljFile
+rwlj_file_open(rwljString path)
+{
+}
+
+void
+rwlj_file_write(void)
+{
+}
+
+void
+rwlj_file_read(void)
+{
+}
+
+void
+rwlj_file_close(rwljFile file)
+{
+}
+#endif
 
 /*
  *  Testing
