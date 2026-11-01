@@ -1353,11 +1353,13 @@ rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment)
     commit_size =
         rwlj_min(rwlj_align_pow2(commit_size, page_size), reserve_size);
 
-    void *mem = rwlj_virtual_memory_reserve(reserve_size);
+    usize total_size = reserve_size + cast(usize) RWLJ_MEMORY_BUFFER_HEADER;
+
+    void *mem = rwlj_virtual_memory_reserve(total_size);
     rwlj_virtual_memory_commit(mem, commit_size);
 
     rwljMemory_Buffer *buf = mem;
-    buf->reserve_size = reserve_size;
+    buf->reserve_size = total_size;
     buf->commit_size = commit_size;
     buf->committed = buf->commit_size;
     buf->used =
