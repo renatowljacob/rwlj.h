@@ -608,8 +608,6 @@ GENERIC_ARRAY(void, Void);
     rwlj_slice_from_ptr((slice)->data, (start), (end))
 #define rwlj_slice_from_buf(buf) rwlj_slice_from_ptr(buf, 0, rwlj_count_of(buf))
 
-#define rwlj_slice_unpack(slice) (slice)->data, (slice)->len
-
 #define rwlj_slice_get(slice, index)                                           \
     (index >= 0 && index < (slice)->len ? (slice)->data[index] : 0)
 #define rwlj_slice_get_struct(item_T, slice, index)                            \
@@ -942,16 +940,16 @@ internal isize __rwlj_bprintf_va(
 isize rwlj_bprintf(rwljSlice_U8 buf, const char *fmt, ...);
 isize rwlj_bprintfln(rwljSlice_U8 buf, const char *fmt, ...);
 
-typedef i32 rwljFile_Descriptor;
+typedef i32 rwljStream;
 
 internal isize __rwlj_fprintf_va(
-    rwljFile_Descriptor fd,
+    rwljStream fd,
     bool has_new_line,
     char const *fmt,
     va_list ap
 );
-isize rwlj_fprintf(rwljFile_Descriptor fd, char const *fmt, ...);
-isize rwlj_fprintfln(rwljFile_Descriptor fd, char const *fmt, ...);
+isize rwlj_fprintf(rwljStream fd, char const *fmt, ...);
+isize rwlj_fprintfln(rwljStream fd, char const *fmt, ...);
 isize rwlj_printf(char const *fmt, ...);
 isize rwlj_printfln(char const *fmt, ...);
 isize rwlj_eprintf(char const *fmt, ...);
@@ -959,8 +957,8 @@ isize rwlj_eprintfln(char const *fmt, ...);
 
 isize rwlj_bprint(rwljSlice_U8 buf, rwljString s);
 isize rwlj_bprintln(rwljSlice_U8 buf, rwljString s);
-isize rwlj_fprint(rwljFile_Descriptor fd, rwljString s);
-isize rwlj_fprintln(rwljFile_Descriptor fd, rwljString s);
+isize rwlj_fprint(rwljStream fd, rwljString s);
+isize rwlj_fprintln(rwljStream fd, rwljString s);
 isize rwlj_print(rwljString s);
 isize rwlj_println(rwljString s);
 isize rwlj_eprint(rwljString s);
@@ -1026,17 +1024,28 @@ rwljDuration rwlj_time_sleep(rwljDuration time);
 
 // TODO: UTF-8 from/to UTF-16 procedures
 
+enum rwljFile_Flags {
+    RWLJ_FILE_WRITE = rwlj_bit(0),
+    RWLJ_FILE_READ = rwlj_bit(1),
+    RWLJ_FILE_APPEND = rwlj_bit(2),
+    RWLJ_FILE_TRUNC = rwlj_bit(3),
+    RWLJ_FILE_INHERITABLE = rwlj_bit(4),
+};
+typedef usize rwljFile_Flags;
+
+typedef union rwljFile_Descriptor {
+    void *p;
+    uintptr u;
+    intptr i;
+} rwljFile_Descriptor;
+
 typedef struct rwljFile {
-#ifdef RWLJ_OS_LINUX
-    i32 handle;
-#else // RWLJ_OS_WINDOWS
-    HANDLE handle;
-#endif
+    rwljFile_Descriptor handle;
 } rwljFile;
 
-rwljFile rwlj_file_open(rwljString path);
-void rwlj_file_write(void);
-void rwlj_file_read(void);
+rwljFile rwlj_file_open(rwljString path, rwljFile_Flags flags);
+isize rwlj_file_write(rwljFile file, rwljSlice_U8 slice);
+isize rwlj_file_read(rwljFile file, rwljSlice_U8 slice);
 void rwlj_file_close(rwljFile file);
 
 #endif // RWLJ_H
@@ -4068,12 +4077,7 @@ rwlj_bprintfln(rwljSlice_U8 buf, char const *fmt, ...)
 }
 
 internal isize
-__rwlj_fprintf_va(
-    rwljFile_Descriptor fd,
-    bool has_new_line,
-    char const *fmt,
-    va_list ap
-)
+__rwlj_fprintf_va(rwljStream fd, bool has_new_line, char const *fmt, va_list ap)
 {
     u8 buf[4096] = { 0 };
     rwljSlice_U8 slice = rwlj_slice_from_buf(buf);
@@ -4083,7 +4087,7 @@ __rwlj_fprintf_va(
 }
 
 isize
-rwlj_fprintf(rwljFile_Descriptor fd, char const *fmt, ...)
+rwlj_fprintf(rwljStream fd, char const *fmt, ...)
 {
     va_list ap;
 
@@ -4095,7 +4099,7 @@ rwlj_fprintf(rwljFile_Descriptor fd, char const *fmt, ...)
 }
 
 isize
-rwlj_fprintfln(rwljFile_Descriptor fd, char const *fmt, ...)
+rwlj_fprintfln(rwljStream fd, char const *fmt, ...)
 {
     va_list ap;
 
@@ -4172,7 +4176,7 @@ rwlj_bprintln(rwljSlice_U8 buf, rwljString s)
 }
 
 isize
-rwlj_fprint(rwljFile_Descriptor fd, rwljString s)
+rwlj_fprint(rwljStream fd, rwljString s)
 {
     if (write(fd, s.data, cast(usize) s.len) == -1) {
         return -1;
@@ -4182,7 +4186,7 @@ rwlj_fprint(rwljFile_Descriptor fd, rwljString s)
 }
 
 isize
-rwlj_fprintln(rwljFile_Descriptor fd, rwljString s)
+rwlj_fprintln(rwljStream fd, rwljString s)
 {
     if (rwlj_fprint(fd, s) == -1) {
         return -1;
@@ -4511,23 +4515,112 @@ rwlj_file_close(rwljFile file)
 }
 #else // RWLJ_OS_WINDOWS
 rwljFile
-rwlj_file_open(rwljString path)
+rwlj_file_open(rwljString path, rwljFile_Flags flags)
 {
+    rwljFile file = { { .i = -1 } };
+
+    if (path.len == 0) {
+        return file;
+    }
+
+    DWORD desired_access = 0;
+    DWORD share_mode = FILE_SHARE_READ;
+    SECURITY_ATTRIBUTES security_attributes = {
+        sizeof(security_attributes),
+        NULL,
+        false,
+    };
+    DWORD creation_disposition = OPEN_EXISTING;
+
+    if (flags & RWLJ_FILE_WRITE) {
+        desired_access |= GENERIC_WRITE;
+        creation_disposition = OPEN_ALWAYS;
+
+        if (flags & RWLJ_FILE_TRUNC) {
+            creation_disposition = CREATE_ALWAYS;
+        }
+    }
+    if (flags & RWLJ_FILE_READ) {
+        desired_access |= GENERIC_READ;
+        share_mode |= (FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+    }
+    if (flags & RWLJ_FILE_APPEND) {
+        creation_disposition = OPEN_ALWAYS;
+    }
+    if (flags & RWLJ_FILE_INHERITABLE) {
+        security_attributes.bInheritHandle = true;
+    }
+
+    i32 len =
+        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
+    WCHAR *filepath = NULL;
+    if (len != 0) {
+        filepath = malloc(cast(usize) len);
+        MultiByteToWideChar(
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
+        );
+        HANDLE handle = CreateFileW(
+            filepath,
+            desired_access,
+            share_mode,
+            &security_attributes,
+            creation_disposition,
+            0,
+            NULL
+        );
+        if (handle != INVALID_HANDLE_VALUE) {
+            file.handle.p = handle;
+        }
+    }
+    if (filepath != NULL) {
+        free(filepath);
+    }
+
+    return file;
 }
 
-void
-rwlj_file_write(void)
+isize
+rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
 {
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    DWORD bytes_written = 0;
+    if (!WriteFile(
+            file.handle.p,
+            slice.data,
+            cast(DWORD) slice.len,
+            &bytes_written,
+            NULL
+        )) {
+        return -1;
+    }
+
+    return bytes_written;
 }
 
-void
-rwlj_file_read(void)
+isize
+rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
 {
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    DWORD bytes_read = 0;
+    if (!ReadFile(
+            file.handle.p, slice.data, cast(DWORD) slice.len, &bytes_read, NULL
+        )) {
+        return -1;
+    }
+
+    return bytes_read;
 }
 
 void
 rwlj_file_close(rwljFile file)
 {
+    CloseHandle(file.handle.p);
 }
 #endif
 
