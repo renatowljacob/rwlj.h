@@ -29,6 +29,7 @@
 #endif
 
 #include <bits/time.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <memory.h>
 #include <stdarg.h>
@@ -1028,8 +1029,10 @@ enum rwljFile_Flags {
     RWLJ_FILE_WRITE = rwlj_bit(0),
     RWLJ_FILE_READ = rwlj_bit(1),
     RWLJ_FILE_APPEND = rwlj_bit(2),
-    RWLJ_FILE_TRUNC = rwlj_bit(3),
-    RWLJ_FILE_INHERITABLE = rwlj_bit(4),
+    RWLJ_FILE_CREATE = rwlj_bit(3),      // open file, create if non-existent
+    RWLJ_FILE_EXCL = rwlj_bit(4),        // create new file, errs if exists
+    RWLJ_FILE_TRUNC = rwlj_bit(5),       // truncate existing
+    RWLJ_FILE_INHERITABLE = rwlj_bit(6), // inheritable by child processes
 };
 typedef usize rwljFile_Flags;
 
@@ -1047,6 +1050,7 @@ rwljFile rwlj_file_open(rwljString path, rwljFile_Flags flags);
 isize rwlj_file_write(rwljFile file, rwljSlice_U8 slice);
 isize rwlj_file_read(rwljFile file, rwljSlice_U8 slice);
 void rwlj_file_close(rwljFile file);
+bool rwlj_file_delete(rwljString path);
 
 #endif // RWLJ_H
 
@@ -4493,25 +4497,88 @@ rwlj_time_unix_since(i64 t)
  *  IO
  */
 
+// Gotta love when your string type is useless because of API quirkness
 #ifdef RWLJ_OS_LINUX
 rwljFile
-rwlj_file_open(rwljString path)
+rwlj_file_open(rwljString path, rwljFile_Flags flags)
 {
+    rwljFile file = { { .i = -1 } };
+
+    if (path.data == NULL || path.len == 0) {
+        return file;
+    }
+
+    i32 file_flags = 0;
+    if (flags & RWLJ_FILE_READ && flags & RWLJ_FILE_WRITE) {
+        file_flags = O_RDWR;
+    } else if (flags & RWLJ_FILE_WRITE) {
+        file_flags = O_WRONLY;
+    } else if (flags & RWLJ_FILE_READ) {
+        file_flags = O_RDONLY;
+    }
+
+    if (flags & RWLJ_FILE_TRUNC) {
+        file_flags |= O_TRUNC;
+    }
+    if (flags & RWLJ_FILE_CREATE) {
+        file_flags |= O_CREAT;
+        if (flags & RWLJ_FILE_EXCL) {
+            file_flags |= O_EXCL;
+            file_flags &= ~O_TRUNC;
+        }
+    }
+    if (flags & O_APPEND) {
+        file_flags |= RWLJ_FILE_APPEND;
+    }
+
+    char *filename = malloc(cast(usize) path.len + 1);
+    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
+    filename[path.len + 1] = '\0';
+
+    file.handle.i = open(filename, file_flags);
+
+    free(filename);
+
+    return file;
 }
 
-void
-rwlj_file_write(void)
+isize
+rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
 {
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    return write(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
 }
 
-void
-rwlj_file_read(void)
+isize
+rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
 {
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    return read(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
 }
 
 void
 rwlj_file_close(rwljFile file)
 {
+    close(cast(i32) file.handle.i);
+}
+
+bool
+rwlj_file_delete(rwljString path)
+{
+    char *filename = malloc(cast(usize) path.len + 1);
+    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
+    filename[path.len + 1] = '\0';
+
+    bool succeeded = !unlink(filename);
+    free(filename);
+
+    return succeeded;
 }
 #else // RWLJ_OS_WINDOWS
 rwljFile
@@ -4519,7 +4586,7 @@ rwlj_file_open(rwljString path, rwljFile_Flags flags)
 {
     rwljFile file = { { .i = -1 } };
 
-    if (path.len == 0) {
+    if (path.data == NULL || path.len == 0) {
         return file;
     }
 
@@ -4532,20 +4599,29 @@ rwlj_file_open(rwljString path, rwljFile_Flags flags)
     };
     DWORD creation_disposition = OPEN_EXISTING;
 
+    if (flags & RWLJ_FILE_APPEND) {
+        desired_access = FILE_APPEND_DATA;
+    }
     if (flags & RWLJ_FILE_WRITE) {
-        desired_access |= GENERIC_WRITE;
+        desired_access = GENERIC_WRITE;
         creation_disposition = OPEN_ALWAYS;
-
-        if (flags & RWLJ_FILE_TRUNC) {
-            creation_disposition = CREATE_ALWAYS;
-        }
     }
     if (flags & RWLJ_FILE_READ) {
         desired_access |= GENERIC_READ;
         share_mode |= (FILE_SHARE_WRITE | FILE_SHARE_DELETE);
     }
-    if (flags & RWLJ_FILE_APPEND) {
+
+    if (flags & RWLJ_FILE_TRUNC) {
+        creation_disposition = TRUNCATE_EXISTING;
+    }
+    if (flags & RWLJ_FILE_CREATE) {
         creation_disposition = OPEN_ALWAYS;
+        if (flags & RWLJ_FILE_EXCL) {
+            creation_disposition = CREATE_NEW;
+        }
+        if (flags & RWLJ_FILE_TRUNC) {
+            creation_disposition = CREATE_ALWAYS;
+        }
     }
     if (flags & RWLJ_FILE_INHERITABLE) {
         security_attributes.bInheritHandle = true;
@@ -4621,6 +4697,27 @@ void
 rwlj_file_close(rwljFile file)
 {
     CloseHandle(file.handle.p);
+}
+
+bool
+rwlj_file_delete(rwljString path)
+{
+    i32 len =
+        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
+    WCHAR *filepath = NULL;
+    bool succeeded = false;
+    if (len != 0) {
+        filepath = malloc(cast(usize) len);
+        MultiByteToWideChar(
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
+        );
+        succeeded = DeleteFileW(filepath);
+    }
+    if (filepath != NULL) {
+        free(filepath);
+    }
+
+    return succeeded;
 }
 #endif
 
