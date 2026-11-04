@@ -2,7 +2,7 @@
 setlocal
 cd /D "%~dp0"
 
-set default_flags=/Od /Ob1 /std:c11 /W4 /Z7 /nologo /FC
+set default_flags=/Od /Ob1 /std:c11 /W4 /Z7 /nologo /FC /experimental:c11atomics
 set analyzer_flags=%default_flags% /analyze /c
 set sanitizer_flags=%default_flags% /fsanitize=address /WX
 

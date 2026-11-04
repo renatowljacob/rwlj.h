@@ -2127,7 +2127,7 @@ rwlj_utf16_encode(rwljSlice_U16 dst, rwljSlice_Rune src)
     isize src_len = 0;
 
     while (dst_len < dst.len && src_len < src.len) {
-        if (src.data[src_len] < cast(u16) RWLJ_UTF16_2BYTE_MAX) {
+        if (src.data[src_len] < RWLJ_UTF16_2BYTE_MAX) {
             dst.data[dst_len] = cast(u16) src.data[src_len];
             dst_len += 1;
             src_len += 1;
@@ -3049,11 +3049,11 @@ rwlj_write_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
         if (decimal_point == -1023) {
             decimal_point = (n64) ? -1022 : 0;
         } else {
-            n64 |= ((1lu) << 52);
+            n64 |= ((1llu) << 52);
         }
         n64 <<= (64 - 56);
         if (prec < 15) {
-            n64 += ((8lu << 56) >> (prec * 4));
+            n64 += ((8llu << 56) >> (prec * 4));
         }
         // add leading chars
 
