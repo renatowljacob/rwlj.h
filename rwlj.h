@@ -455,6 +455,7 @@ void rwlj_virtual_memory_decommit(void *mem, usize size);
 void rwlj_virtual_memory_free(void *mem, usize size);
 
 typedef struct rwljMemory_Buffer {
+    usize total_size;
     usize reserve_size;
     usize commit_size;
     usize committed;
@@ -1366,13 +1367,16 @@ rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment)
     commit_size =
         rwlj_min(rwlj_align_pow2(commit_size, page_size), reserve_size);
 
-    usize total_size = reserve_size + cast(usize) RWLJ_MEMORY_BUFFER_HEADER;
+    usize total_size =
+        reserve_size +
+        cast(usize) rwlj_align_pow2(RWLJ_MEMORY_BUFFER_HEADER, alignment);
 
     void *mem = rwlj_virtual_memory_reserve(total_size);
     rwlj_virtual_memory_commit(mem, commit_size);
 
     rwljMemory_Buffer *buf = mem;
-    buf->reserve_size = total_size;
+    buf->total_size = total_size;
+    buf->reserve_size = reserve_size;
     buf->commit_size = commit_size;
     buf->committed = buf->commit_size;
     buf->used =
@@ -1385,7 +1389,7 @@ void
 rwlj_memory_buffer_free(rwljMemory_Buffer *m)
 {
     if (m != NULL) {
-        rwlj_virtual_memory_free(m, m->reserve_size);
+        rwlj_virtual_memory_free(m, m->total_size);
     }
 }
 
@@ -4527,15 +4531,20 @@ rwlj_file_open(rwljString path, rwljFile_Flags flags)
             file_flags &= ~O_TRUNC;
         }
     }
-    if (flags & O_APPEND) {
-        file_flags |= RWLJ_FILE_APPEND;
+    if (flags & RWLJ_FILE_APPEND) {
+        file_flags |= O_APPEND;
+        if (flags & RWLJ_FILE_READ) {
+            file_flags |= O_RDWR;
+        } else {
+            file_flags |= O_WRONLY;
+        }
     }
 
     char *filename = malloc(cast(usize) path.len + 1);
     rwlj_memory_copy(filename, path.data, cast(usize) path.len);
-    filename[path.len + 1] = '\0';
+    filename[path.len] = '\0';
 
-    file.handle.i = open(filename, file_flags);
+    file.handle.i = open(filename, file_flags, 0644);
 
     free(filename);
 
@@ -4573,7 +4582,7 @@ rwlj_file_delete(rwljString path)
 {
     char *filename = malloc(cast(usize) path.len + 1);
     rwlj_memory_copy(filename, path.data, cast(usize) path.len);
-    filename[path.len + 1] = '\0';
+    filename[path.len] = '\0';
 
     bool succeeded = !unlink(filename);
     free(filename);
@@ -4600,11 +4609,10 @@ rwlj_file_open(rwljString path, rwljFile_Flags flags)
     DWORD creation_disposition = OPEN_EXISTING;
 
     if (flags & RWLJ_FILE_APPEND) {
-        desired_access = FILE_APPEND_DATA;
+        desired_access |= (FILE_APPEND_DATA | GENERIC_WRITE);
     }
     if (flags & RWLJ_FILE_WRITE) {
-        desired_access = GENERIC_WRITE;
-        creation_disposition = OPEN_ALWAYS;
+        desired_access |= GENERIC_WRITE;
     }
     if (flags & RWLJ_FILE_READ) {
         desired_access |= GENERIC_READ;
