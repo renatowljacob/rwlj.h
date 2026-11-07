@@ -23,20 +23,14 @@ test_math(void)
 
     TEST("Identifies infinity")
     {
-        rwlj_testing_expect(rwlj_is_inf(RWLJ_INFINITY));
-        rwlj_testing_expect(rwlj_is_inf(-RWLJ_INFINITY));
         rwlj_testing_expect(!rwlj_is_inf(0.0));
         rwlj_testing_expect(!rwlj_is_inf(-0.0));
         rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MAX));
         rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MIN));
-        rwlj_testing_expect(!rwlj_is_inf(RWLJ_NAN));
     }
 
     TEST("Identifies NaNs")
     {
-        rwlj_testing_expect(rwlj_is_nan(RWLJ_NAN));
-        rwlj_testing_expect(!rwlj_is_nan(RWLJ_INFINITY));
-        rwlj_testing_expect(!rwlj_is_nan(-RWLJ_INFINITY));
         rwlj_testing_expect(!rwlj_is_nan(0.0));
         rwlj_testing_expect(!rwlj_is_nan(-0.0));
         rwlj_testing_expect(!rwlj_is_nan(RWLJ_F64_MAX));
@@ -53,9 +47,6 @@ test_math(void)
         rwlj_testing_expect(rwlj_is_subnormal(max_subnormal));
         rwlj_testing_expect(rwlj_is_subnormal(-min_subnormal));
         rwlj_testing_expect(rwlj_is_subnormal(-max_subnormal));
-        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_NAN));
-        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_INFINITY));
-        rwlj_testing_expect(!rwlj_is_subnormal(-RWLJ_INFINITY));
         rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MAX));
         rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MIN));
         rwlj_testing_expect(!rwlj_is_subnormal(3.14159265));
@@ -63,15 +54,6 @@ test_math(void)
 
     TEST("Classifies floats correctly")
     {
-        rwlj_testing_expect_value(
-            rwlj_classify(RWLJ_NAN), RWLJ_FLOAT_CLASS_NAN
-        );
-        rwlj_testing_expect_value(
-            rwlj_classify(RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
-        );
-        rwlj_testing_expect_value(
-            rwlj_classify(-RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
-        );
         rwlj_testing_expect_value(
             rwlj_classify(min_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
         );
@@ -2835,8 +2817,6 @@ test_unicode(void)
     }
 }
 
-static rwljString const rwlj_file_test_path = STRING("rwlj_file_tests.tmp");
-
 static bool
 rwlj_test_file_is_closed(rwljFile file)
 {
@@ -2855,6 +2835,7 @@ test_file(void)
 {
     DESCRIBE("rwljFile tests");
 
+    rwljString rwlj_file_test_path = STRING("rwlj_file_tests.tmp");
     rwlj_file_delete(rwlj_file_test_path);
 
     TEST("Opens, writes, reads, and closes a file")

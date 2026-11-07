@@ -94,11 +94,6 @@
 #define rwlj_concat(x, y)  x##y
 #define rwlj_concat_(x, y) x##_##y
 
-// TODO: Port this to win32
-#define RWLJ_STDIN  STDIN_FILENO
-#define RWLJ_STDOUT STDOUT_FILENO
-#define RWLJ_STDERR STDERR_FILENO
-
 #define RWLJ_LINE     __LINE__
 #define RWLJ_FUNCTION __func__
 #define RWLJ_FILE     __FILE__
@@ -342,9 +337,6 @@ GENERIC_RANGE(isize, Isize);
 #define RWLJ_F64_SHIFT (64 - 12)
 #define RWLJ_F64_MASK  0x7ffll
 #define RWLJ_F64_BIAS  0x3ffll
-
-#define RWLJ_NAN      (.0 / .0)
-#define RWLJ_INFINITY (.1 / .0)
 
 enum rwljFloat_Class {
     RWLJ_FLOAT_CLASS_NORMAL,
@@ -872,6 +864,49 @@ bool rwlj_utf16_validate(rwljSlice_U16 s);
 isize rwlj_utf8_from_utf16(rwljSlice_U8 dst, rwljSlice_U16 src);
 isize rwlj_utf16_from_utf8(rwljSlice_U16 dst, rwljSlice_U8 src);
 
+/*
+ *  IO
+ */
+
+enum rwljFile_Flags {
+    RWLJ_FILE_WRITE = rwlj_bit(0),
+    RWLJ_FILE_READ = rwlj_bit(1),
+    RWLJ_FILE_APPEND = rwlj_bit(2),
+    RWLJ_FILE_CREATE = rwlj_bit(3),      // open file, create if non-existent
+    RWLJ_FILE_EXCL = rwlj_bit(4),        // create new file, errs if exists
+    RWLJ_FILE_TRUNC = rwlj_bit(5),       // truncate existing
+    RWLJ_FILE_INHERITABLE = rwlj_bit(6), // inheritable by child processes
+};
+typedef usize rwljFile_Flags;
+
+typedef union rwljFile_Descriptor {
+    void *p;
+    uintptr u;
+    intptr i;
+} rwljFile_Descriptor;
+
+typedef struct rwljFile {
+    rwljFile_Descriptor handle;
+} rwljFile;
+
+enum rwljFile_Standard {
+    RWLJ_STDIN,
+    RWLJ_STDOUT,
+    RWLJ_STDERR,
+    RWLJ_FILE_STANDARD_COUNT,
+};
+typedef isize rwljFile_Standard;
+
+rwljFile __rwlj_file_standard[RWLJ_FILE_STANDARD_COUNT] = {0};
+bool __rwlj_file_standard_is_set = false;
+
+rwljFile *rwlj_get_file_standard(rwljFile_Standard std);
+rwljFile rwlj_file_open(rwljString path, rwljFile_Flags flags);
+isize rwlj_file_write(rwljFile file, rwljSlice_U8 slice);
+isize rwlj_file_read(rwljFile file, rwljSlice_U8 slice);
+void rwlj_file_close(rwljFile file);
+bool rwlj_file_delete(rwljString path);
+
 // rwljString procedures
 bsize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
 #define rwlj_string_compare(a, b)             __rwlj_string_compare(a, b, true)
@@ -942,16 +977,14 @@ internal isize __rwlj_bprintf_va(
 isize rwlj_bprintf(rwljSlice_U8 buf, const char *fmt, ...);
 isize rwlj_bprintfln(rwljSlice_U8 buf, const char *fmt, ...);
 
-typedef i32 rwljStream;
-
 internal isize __rwlj_fprintf_va(
-    rwljStream fd,
+    rwljFile file,
     bool has_new_line,
     char const *fmt,
     va_list ap
 );
-isize rwlj_fprintf(rwljStream fd, char const *fmt, ...);
-isize rwlj_fprintfln(rwljStream fd, char const *fmt, ...);
+isize rwlj_fprintf(rwljFile file, char const *fmt, ...);
+isize rwlj_fprintfln(rwljFile file, char const *fmt, ...);
 isize rwlj_printf(char const *fmt, ...);
 isize rwlj_printfln(char const *fmt, ...);
 isize rwlj_eprintf(char const *fmt, ...);
@@ -959,8 +992,8 @@ isize rwlj_eprintfln(char const *fmt, ...);
 
 isize rwlj_bprint(rwljSlice_U8 buf, rwljString s);
 isize rwlj_bprintln(rwljSlice_U8 buf, rwljString s);
-isize rwlj_fprint(rwljStream fd, rwljString s);
-isize rwlj_fprintln(rwljStream fd, rwljString s);
+isize rwlj_fprint(rwljFile file, rwljString s);
+isize rwlj_fprintln(rwljFile file, rwljString s);
 isize rwlj_print(rwljString s);
 isize rwlj_println(rwljString s);
 isize rwlj_eprint(rwljString s);
@@ -1023,35 +1056,6 @@ rwljDuration rwlj_time_sleep(rwljDuration time);
 /*
  *  Platform-specific
  */
-
-// TODO: UTF-8 from/to UTF-16 procedures
-
-enum rwljFile_Flags {
-    RWLJ_FILE_WRITE = rwlj_bit(0),
-    RWLJ_FILE_READ = rwlj_bit(1),
-    RWLJ_FILE_APPEND = rwlj_bit(2),
-    RWLJ_FILE_CREATE = rwlj_bit(3),      // open file, create if non-existent
-    RWLJ_FILE_EXCL = rwlj_bit(4),        // create new file, errs if exists
-    RWLJ_FILE_TRUNC = rwlj_bit(5),       // truncate existing
-    RWLJ_FILE_INHERITABLE = rwlj_bit(6), // inheritable by child processes
-};
-typedef usize rwljFile_Flags;
-
-typedef union rwljFile_Descriptor {
-    void *p;
-    uintptr u;
-    intptr i;
-} rwljFile_Descriptor;
-
-typedef struct rwljFile {
-    rwljFile_Descriptor handle;
-} rwljFile;
-
-rwljFile rwlj_file_open(rwljString path, rwljFile_Flags flags);
-isize rwlj_file_write(rwljFile file, rwljSlice_U8 slice);
-isize rwlj_file_read(rwljFile file, rwljSlice_U8 slice);
-void rwlj_file_close(rwljFile file);
-bool rwlj_file_delete(rwljString path);
 
 #endif // RWLJ_H
 
@@ -2243,6 +2247,260 @@ rwlj_utf16_from_utf8(rwljSlice_U16 dst, rwljSlice_U8 src)
 }
 
 /*
+ *  IO
+ */
+
+// Gotta love when your string type is useless because of API quirkness
+#ifdef RWLJ_OS_LINUX
+rwljFile *rwlj_get_file_standard(rwljFile_Standard std)
+{
+    if (!__rwlj_file_standard_is_set) {
+        __rwlj_file_standard[RWLJ_STDIN].handle.i = RWLJ_STDIN;
+        __rwlj_file_standard[RWLJ_STDOUT].handle.i = RWLJ_STDOUT;
+        __rwlj_file_standard[RWLJ_STDERR].handle.i = RWLJ_STDERR;
+    }
+
+    return &__rwlj_file_standard[std];
+}
+
+rwljFile
+rwlj_file_open(rwljString path, rwljFile_Flags flags)
+{
+    rwljFile file = { { .i = -1 } };
+
+    if (path.data == NULL || path.len == 0) {
+        return file;
+    }
+
+    i32 file_flags = 0;
+    if (flags & RWLJ_FILE_READ && flags & RWLJ_FILE_WRITE) {
+        file_flags = O_RDWR;
+    } else if (flags & RWLJ_FILE_WRITE) {
+        file_flags = O_WRONLY;
+    } else if (flags & RWLJ_FILE_READ) {
+        file_flags = O_RDONLY;
+    }
+
+    if (flags & RWLJ_FILE_TRUNC) {
+        file_flags |= O_TRUNC;
+    }
+    if (flags & RWLJ_FILE_CREATE) {
+        file_flags |= O_CREAT;
+        if (flags & RWLJ_FILE_EXCL) {
+            file_flags |= O_EXCL;
+            file_flags &= ~O_TRUNC;
+        }
+    }
+    if (flags & RWLJ_FILE_APPEND) {
+        file_flags |= O_APPEND;
+        if (flags & RWLJ_FILE_READ) {
+            file_flags |= O_RDWR;
+        } else {
+            file_flags |= O_WRONLY;
+        }
+    }
+
+    char *filename = malloc(cast(usize) path.len + 1);
+    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
+    filename[path.len] = '\0';
+
+    file.handle.i = open(filename, file_flags, 0644);
+
+    free(filename);
+
+    return file;
+}
+
+isize
+rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    return write(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
+}
+
+isize
+rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    return read(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
+}
+
+void
+rwlj_file_close(rwljFile file)
+{
+    close(cast(i32) file.handle.i);
+}
+
+bool
+rwlj_file_delete(rwljString path)
+{
+    char *filename = malloc(cast(usize) path.len + 1);
+    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
+    filename[path.len] = '\0';
+
+    bool succeeded = !unlink(filename);
+    free(filename);
+
+    return succeeded;
+}
+#else // RWLJ_OS_WINDOWS
+rwljFile *rwlj_get_file_standard(rwljFile_Standard std)
+{
+    if (!__rwlj_file_standard_is_set) {
+        __rwlj_file_standard[RWLJ_STDIN].handle.p = GetStdHandle(STD_INPUT_HANDLE);
+        __rwlj_file_standard[RWLJ_STDOUT].handle.p = GetStdHandle(STD_OUTPUT_HANDLE);
+        __rwlj_file_standard[RWLJ_STDERR].handle.p = GetStdHandle(STD_ERROR_HANDLE);
+    }
+
+    return &__rwlj_file_standard[std];
+}
+
+rwljFile
+rwlj_file_open(rwljString path, rwljFile_Flags flags)
+{
+    rwljFile file = { { .i = -1 } };
+
+    if (path.data == NULL || path.len == 0) {
+        return file;
+    }
+
+    DWORD desired_access = 0;
+    DWORD share_mode = FILE_SHARE_READ;
+    SECURITY_ATTRIBUTES security_attributes = {
+        sizeof(security_attributes),
+        NULL,
+        false,
+    };
+    DWORD creation_disposition = OPEN_EXISTING;
+
+    if (flags & RWLJ_FILE_APPEND) {
+        desired_access |= (FILE_APPEND_DATA | GENERIC_WRITE);
+    }
+    if (flags & RWLJ_FILE_WRITE) {
+        desired_access |= GENERIC_WRITE;
+    }
+    if (flags & RWLJ_FILE_READ) {
+        desired_access |= GENERIC_READ;
+        share_mode |= (FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+    }
+
+    if (flags & RWLJ_FILE_TRUNC) {
+        creation_disposition = TRUNCATE_EXISTING;
+    }
+    if (flags & RWLJ_FILE_CREATE) {
+        creation_disposition = OPEN_ALWAYS;
+        if (flags & RWLJ_FILE_EXCL) {
+            creation_disposition = CREATE_NEW;
+        }
+        if (flags & RWLJ_FILE_TRUNC) {
+            creation_disposition = CREATE_ALWAYS;
+        }
+    }
+    if (flags & RWLJ_FILE_INHERITABLE) {
+        security_attributes.bInheritHandle = true;
+    }
+
+    i32 len =
+        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
+    WCHAR *filepath = NULL;
+    if (len != 0) {
+        filepath = malloc(cast(usize) len);
+        MultiByteToWideChar(
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
+        );
+        HANDLE handle = CreateFileW(
+            filepath,
+            desired_access,
+            share_mode,
+            &security_attributes,
+            creation_disposition,
+            0,
+            NULL
+        );
+        if (handle != INVALID_HANDLE_VALUE) {
+            file.handle.p = handle;
+        }
+    }
+    if (filepath != NULL) {
+        free(filepath);
+    }
+
+    return file;
+}
+
+isize
+rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    DWORD bytes_written = 0;
+    if (!WriteFile(
+            file.handle.p,
+            slice.data,
+            cast(DWORD) slice.len,
+            &bytes_written,
+            NULL
+        )) {
+        return -1;
+    }
+
+    return bytes_written;
+}
+
+isize
+rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    DWORD bytes_read = 0;
+    if (!ReadFile(
+            file.handle.p, slice.data, cast(DWORD) slice.len, &bytes_read, NULL
+        )) {
+        return -1;
+    }
+
+    return bytes_read;
+}
+
+void
+rwlj_file_close(rwljFile file)
+{
+    CloseHandle(file.handle.p);
+}
+
+bool
+rwlj_file_delete(rwljString path)
+{
+    i32 len =
+        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
+    WCHAR *filepath = NULL;
+    bool succeeded = false;
+    if (len != 0) {
+        filepath = malloc(cast(usize) len);
+        MultiByteToWideChar(
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
+        );
+        succeeded = DeleteFileW(filepath);
+    }
+    if (filepath != NULL) {
+        free(filepath);
+    }
+
+    return succeeded;
+}
+#endif
+
+/*
  *  Strings
  */
 
@@ -2427,6 +2685,7 @@ rwlj_string_reverse(rwljString s, rwljArena *arena)
     rwlj_unused(s);
     rwlj_unused(arena);
     rwlj_not_implemented();
+    return STRING("");
 }
 
 // C string procedures
@@ -4085,34 +4344,34 @@ rwlj_bprintfln(rwljSlice_U8 buf, char const *fmt, ...)
 }
 
 internal isize
-__rwlj_fprintf_va(rwljStream fd, bool has_new_line, char const *fmt, va_list ap)
+__rwlj_fprintf_va(rwljFile file, bool has_new_line, char const *fmt, va_list ap)
 {
     u8 buf[4096] = { 0 };
     rwljSlice_U8 slice = rwlj_slice_from_buf(buf);
     isize len = __rwlj_bprintf_va(slice, has_new_line, fmt, ap);
 
-    return write(fd, slice.data, cast(usize) len);
+    return rwlj_file_write(file, cast(rwljSlice_U8) rwlj_slice(&slice, 0, len));
 }
 
 isize
-rwlj_fprintf(rwljStream fd, char const *fmt, ...)
+rwlj_fprintf(rwljFile file, char const *fmt, ...)
 {
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(fd, false, fmt, ap);
+    isize len = __rwlj_fprintf_va(file, false, fmt, ap);
     va_end(ap);
 
     return len;
 }
 
 isize
-rwlj_fprintfln(rwljStream fd, char const *fmt, ...)
+rwlj_fprintfln(rwljFile file, char const *fmt, ...)
 {
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(fd, true, fmt, ap);
+    isize len = __rwlj_fprintf_va(file, true, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4124,7 +4383,7 @@ rwlj_eprintf(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDERR, false, fmt, ap);
+    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), false, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4136,7 +4395,7 @@ rwlj_eprintfln(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDERR, true, fmt, ap);
+    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), true, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4148,7 +4407,7 @@ rwlj_printf(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDOUT, false, fmt, ap);
+    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), false, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4160,7 +4419,7 @@ rwlj_printfln(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDOUT, true, fmt, ap);
+    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), true, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4184,9 +4443,12 @@ rwlj_bprintln(rwljSlice_U8 buf, rwljString s)
 }
 
 isize
-rwlj_fprint(rwljStream fd, rwljString s)
+rwlj_fprint(rwljFile file, rwljString s)
 {
-    if (write(fd, s.data, cast(usize) s.len) == -1) {
+    if (rwlj_file_write(
+            file,
+            cast(rwljSlice_U8) rwlj_slice_from_ptr(cast(u8 *) s.data, 0, s.len)
+        ) == -1) {
         return -1;
     }
 
@@ -4194,13 +4456,18 @@ rwlj_fprint(rwljStream fd, rwljString s)
 }
 
 isize
-rwlj_fprintln(rwljStream fd, rwljString s)
+rwlj_fprintln(rwljFile file, rwljString s)
 {
-    if (rwlj_fprint(fd, s) == -1) {
+    if (rwlj_fprint(file, s) == -1) {
         return -1;
     }
 
-    if (write(fd, "\n", 1) == -1) {
+    rwljString newline = STRING("\n");
+    if (rwlj_file_write(
+            file,
+            cast(rwljSlice_U8)
+                rwlj_slice_from_ptr(cast(u8 *) newline.data, 0, newline.len)
+        ) == -1) {
         return -1;
     }
 
@@ -4210,25 +4477,25 @@ rwlj_fprintln(rwljStream fd, rwljString s)
 isize
 rwlj_print(rwljString s)
 {
-    return rwlj_fprint(RWLJ_STDOUT, s);
+    return rwlj_fprint(*rwlj_get_file_standard(RWLJ_STDOUT), s);
 }
 
 isize
 rwlj_println(rwljString s)
 {
-    return rwlj_fprintln(RWLJ_STDOUT, s);
+    return rwlj_fprintln(*rwlj_get_file_standard(RWLJ_STDOUT), s);
 }
 
 isize
 rwlj_eprint(rwljString s)
 {
-    return rwlj_fprint(RWLJ_STDERR, s);
+    return rwlj_fprint(*rwlj_get_file_standard(RWLJ_STDERR), s);
 }
 
 isize
 rwlj_eprintln(rwljString s)
 {
-    return rwlj_fprintln(RWLJ_STDERR, s);
+    return rwlj_fprintln(*rwlj_get_file_standard(RWLJ_STDERR), s);
 }
 
 // TODO: Give more init options to String_Builder (from buffer, arena or
@@ -4470,6 +4737,7 @@ rwlj_time_sleep(rwljDuration time)
 {
     rwlj_unused(time);
     rwlj_not_implemented();
+    return 0;
 }
 #endif // RWLJ_OS_WINDOWS
 
@@ -4496,238 +4764,6 @@ rwlj_time_unix_since(i64 t)
 {
     return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
 }
-
-/*
- *  IO
- */
-
-// Gotta love when your string type is useless because of API quirkness
-#ifdef RWLJ_OS_LINUX
-rwljFile
-rwlj_file_open(rwljString path, rwljFile_Flags flags)
-{
-    rwljFile file = { { .i = -1 } };
-
-    if (path.data == NULL || path.len == 0) {
-        return file;
-    }
-
-    i32 file_flags = 0;
-    if (flags & RWLJ_FILE_READ && flags & RWLJ_FILE_WRITE) {
-        file_flags = O_RDWR;
-    } else if (flags & RWLJ_FILE_WRITE) {
-        file_flags = O_WRONLY;
-    } else if (flags & RWLJ_FILE_READ) {
-        file_flags = O_RDONLY;
-    }
-
-    if (flags & RWLJ_FILE_TRUNC) {
-        file_flags |= O_TRUNC;
-    }
-    if (flags & RWLJ_FILE_CREATE) {
-        file_flags |= O_CREAT;
-        if (flags & RWLJ_FILE_EXCL) {
-            file_flags |= O_EXCL;
-            file_flags &= ~O_TRUNC;
-        }
-    }
-    if (flags & RWLJ_FILE_APPEND) {
-        file_flags |= O_APPEND;
-        if (flags & RWLJ_FILE_READ) {
-            file_flags |= O_RDWR;
-        } else {
-            file_flags |= O_WRONLY;
-        }
-    }
-
-    char *filename = malloc(cast(usize) path.len + 1);
-    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
-    filename[path.len] = '\0';
-
-    file.handle.i = open(filename, file_flags, 0644);
-
-    free(filename);
-
-    return file;
-}
-
-isize
-rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
-{
-    if (slice.data == NULL || slice.len < 0) {
-        return -1;
-    }
-
-    return write(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
-}
-
-isize
-rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
-{
-    if (slice.data == NULL || slice.len < 0) {
-        return -1;
-    }
-
-    return read(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
-}
-
-void
-rwlj_file_close(rwljFile file)
-{
-    close(cast(i32) file.handle.i);
-}
-
-bool
-rwlj_file_delete(rwljString path)
-{
-    char *filename = malloc(cast(usize) path.len + 1);
-    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
-    filename[path.len] = '\0';
-
-    bool succeeded = !unlink(filename);
-    free(filename);
-
-    return succeeded;
-}
-#else // RWLJ_OS_WINDOWS
-rwljFile
-rwlj_file_open(rwljString path, rwljFile_Flags flags)
-{
-    rwljFile file = { { .i = -1 } };
-
-    if (path.data == NULL || path.len == 0) {
-        return file;
-    }
-
-    DWORD desired_access = 0;
-    DWORD share_mode = FILE_SHARE_READ;
-    SECURITY_ATTRIBUTES security_attributes = {
-        sizeof(security_attributes),
-        NULL,
-        false,
-    };
-    DWORD creation_disposition = OPEN_EXISTING;
-
-    if (flags & RWLJ_FILE_APPEND) {
-        desired_access |= (FILE_APPEND_DATA | GENERIC_WRITE);
-    }
-    if (flags & RWLJ_FILE_WRITE) {
-        desired_access |= GENERIC_WRITE;
-    }
-    if (flags & RWLJ_FILE_READ) {
-        desired_access |= GENERIC_READ;
-        share_mode |= (FILE_SHARE_WRITE | FILE_SHARE_DELETE);
-    }
-
-    if (flags & RWLJ_FILE_TRUNC) {
-        creation_disposition = TRUNCATE_EXISTING;
-    }
-    if (flags & RWLJ_FILE_CREATE) {
-        creation_disposition = OPEN_ALWAYS;
-        if (flags & RWLJ_FILE_EXCL) {
-            creation_disposition = CREATE_NEW;
-        }
-        if (flags & RWLJ_FILE_TRUNC) {
-            creation_disposition = CREATE_ALWAYS;
-        }
-    }
-    if (flags & RWLJ_FILE_INHERITABLE) {
-        security_attributes.bInheritHandle = true;
-    }
-
-    i32 len =
-        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
-    WCHAR *filepath = NULL;
-    if (len != 0) {
-        filepath = malloc(cast(usize) len);
-        MultiByteToWideChar(
-            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
-        );
-        HANDLE handle = CreateFileW(
-            filepath,
-            desired_access,
-            share_mode,
-            &security_attributes,
-            creation_disposition,
-            0,
-            NULL
-        );
-        if (handle != INVALID_HANDLE_VALUE) {
-            file.handle.p = handle;
-        }
-    }
-    if (filepath != NULL) {
-        free(filepath);
-    }
-
-    return file;
-}
-
-isize
-rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
-{
-    if (slice.data == NULL || slice.len < 0) {
-        return -1;
-    }
-
-    DWORD bytes_written = 0;
-    if (!WriteFile(
-            file.handle.p,
-            slice.data,
-            cast(DWORD) slice.len,
-            &bytes_written,
-            NULL
-        )) {
-        return -1;
-    }
-
-    return bytes_written;
-}
-
-isize
-rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
-{
-    if (slice.data == NULL || slice.len < 0) {
-        return -1;
-    }
-
-    DWORD bytes_read = 0;
-    if (!ReadFile(
-            file.handle.p, slice.data, cast(DWORD) slice.len, &bytes_read, NULL
-        )) {
-        return -1;
-    }
-
-    return bytes_read;
-}
-
-void
-rwlj_file_close(rwljFile file)
-{
-    CloseHandle(file.handle.p);
-}
-
-bool
-rwlj_file_delete(rwljString path)
-{
-    i32 len =
-        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
-    WCHAR *filepath = NULL;
-    bool succeeded = false;
-    if (len != 0) {
-        filepath = malloc(cast(usize) len);
-        MultiByteToWideChar(
-            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
-        );
-        succeeded = DeleteFileW(filepath);
-    }
-    if (filepath != NULL) {
-        free(filepath);
-    }
-
-    return succeeded;
-}
-#endif
 
 /*
  *  Testing
