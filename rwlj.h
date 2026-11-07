@@ -29,6 +29,7 @@
 #endif
 
 #include <bits/time.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <memory.h>
 #include <stdarg.h>
@@ -47,6 +48,7 @@
 // Windows headers
 #include <intrin.h>
 #include <malloc.h>
+#include <memory.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -92,11 +94,6 @@
 
 #define rwlj_concat(x, y)  x##y
 #define rwlj_concat_(x, y) x##_##y
-
-// TODO: Port this to win32
-#define RWLJ_STDIN  STDIN_FILENO
-#define RWLJ_STDOUT STDOUT_FILENO
-#define RWLJ_STDERR STDERR_FILENO
 
 #define RWLJ_LINE     __LINE__
 #define RWLJ_FUNCTION __func__
@@ -342,9 +339,6 @@ GENERIC_RANGE(isize, Isize);
 #define RWLJ_F64_MASK  0x7ffll
 #define RWLJ_F64_BIAS  0x3ffll
 
-#define RWLJ_NAN      (.0 / .0)
-#define RWLJ_INFINITY (.1 / .0)
-
 enum rwljFloat_Class {
     RWLJ_FLOAT_CLASS_NORMAL,
     RWLJ_FLOAT_CLASS_SUBNORMAL,
@@ -454,6 +448,7 @@ void rwlj_virtual_memory_decommit(void *mem, usize size);
 void rwlj_virtual_memory_free(void *mem, usize size);
 
 typedef struct rwljMemory_Buffer {
+    usize total_size;
     usize reserve_size;
     usize commit_size;
     usize committed;
@@ -467,6 +462,9 @@ rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment);
 void *
 rwlj_memory_buffer_alloc(rwljMemory_Buffer *m, usize size, usize alignment);
 void rwlj_memory_buffer_free(rwljMemory_Buffer *m);
+
+// TODO: Allocator interface and heap_allocator (the mallocs in file_open and
+// file_delete are kinda ugly)
 
 /*
  *  Memory Allocators
@@ -607,8 +605,6 @@ GENERIC_ARRAY(void, Void);
 #define rwlj_slice(slice, start, end)                                          \
     rwlj_slice_from_ptr((slice)->data, (start), (end))
 #define rwlj_slice_from_buf(buf) rwlj_slice_from_ptr(buf, 0, rwlj_count_of(buf))
-
-#define rwlj_slice_unpack(slice) (slice)->data, (slice)->len
 
 #define rwlj_slice_get(slice, index)                                           \
     (index >= 0 && index < (slice)->len ? (slice)->data[index] : 0)
@@ -872,7 +868,53 @@ bool rwlj_utf16_validate(rwljSlice_U16 s);
 isize rwlj_utf8_from_utf16(rwljSlice_U8 dst, rwljSlice_U16 src);
 isize rwlj_utf16_from_utf8(rwljSlice_U16 dst, rwljSlice_U8 src);
 
-// rwljString procedures
+/*
+ *  IO
+ */
+
+enum rwljFile_Flags {
+    RWLJ_FILE_WRITE = rwlj_bit(0),
+    RWLJ_FILE_READ = rwlj_bit(1),
+    RWLJ_FILE_APPEND = rwlj_bit(2),
+    RWLJ_FILE_CREATE = rwlj_bit(3),      // open file, create if non-existent
+    RWLJ_FILE_EXCL = rwlj_bit(4),        // create new file, errs if exists
+    RWLJ_FILE_TRUNC = rwlj_bit(5),       // truncate existing
+    RWLJ_FILE_INHERITABLE = rwlj_bit(6), // inheritable by child processes
+};
+typedef usize rwljFile_Flags;
+
+typedef union rwljFile_Descriptor {
+    void *p;
+    uintptr u;
+    intptr i;
+} rwljFile_Descriptor;
+
+typedef struct rwljFile {
+    rwljFile_Descriptor handle;
+} rwljFile;
+
+enum rwljFile_Standard {
+    RWLJ_STDIN,
+    RWLJ_STDOUT,
+    RWLJ_STDERR,
+    RWLJ_FILE_STANDARD_COUNT,
+};
+typedef isize rwljFile_Standard;
+
+rwljFile __rwlj_file_standard[RWLJ_FILE_STANDARD_COUNT] = { 0 };
+bool __rwlj_file_standard_is_set = false;
+
+rwljFile *rwlj_get_file_standard(rwljFile_Standard std);
+rwljFile rwlj_file_open(rwljString path, rwljFile_Flags flags);
+isize rwlj_file_write(rwljFile file, rwljSlice_U8 slice);
+isize rwlj_file_read(rwljFile file, rwljSlice_U8 slice);
+void rwlj_file_close(rwljFile file);
+bool rwlj_file_delete(rwljString path);
+
+/*
+ *  rwljString procedures
+ */
+
 bsize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
 #define rwlj_string_compare(a, b)             __rwlj_string_compare(a, b, true)
 #define rwlj_string_compare_insensitive(a, b) __rwlj_string_compare(a, b, false)
@@ -942,16 +984,14 @@ internal isize __rwlj_bprintf_va(
 isize rwlj_bprintf(rwljSlice_U8 buf, const char *fmt, ...);
 isize rwlj_bprintfln(rwljSlice_U8 buf, const char *fmt, ...);
 
-typedef i32 rwljFile_Descriptor;
-
 internal isize __rwlj_fprintf_va(
-    rwljFile_Descriptor fd,
+    rwljFile file,
     bool has_new_line,
     char const *fmt,
     va_list ap
 );
-isize rwlj_fprintf(rwljFile_Descriptor fd, char const *fmt, ...);
-isize rwlj_fprintfln(rwljFile_Descriptor fd, char const *fmt, ...);
+isize rwlj_fprintf(rwljFile file, char const *fmt, ...);
+isize rwlj_fprintfln(rwljFile file, char const *fmt, ...);
 isize rwlj_printf(char const *fmt, ...);
 isize rwlj_printfln(char const *fmt, ...);
 isize rwlj_eprintf(char const *fmt, ...);
@@ -959,8 +999,8 @@ isize rwlj_eprintfln(char const *fmt, ...);
 
 isize rwlj_bprint(rwljSlice_U8 buf, rwljString s);
 isize rwlj_bprintln(rwljSlice_U8 buf, rwljString s);
-isize rwlj_fprint(rwljFile_Descriptor fd, rwljString s);
-isize rwlj_fprintln(rwljFile_Descriptor fd, rwljString s);
+isize rwlj_fprint(rwljFile file, rwljString s);
+isize rwlj_fprintln(rwljFile file, rwljString s);
 isize rwlj_print(rwljString s);
 isize rwlj_println(rwljString s);
 isize rwlj_eprint(rwljString s);
@@ -1023,21 +1063,6 @@ rwljDuration rwlj_time_sleep(rwljDuration time);
 /*
  *  Platform-specific
  */
-
-// TODO: UTF-8 from/to UTF-16 procedures
-
-typedef struct rwljFile {
-#ifdef RWLJ_OS_LINUX
-    i32 handle;
-#else // RWLJ_OS_WINDOWS
-    HANDLE handle;
-#endif
-} rwljFile;
-
-// rwljFile rwlj_file_open(rwljString path);
-// void rwlj_file_write(void);
-// void rwlj_file_read(void);
-// void rwlj_file_close(rwljFile file);
 
 #endif // RWLJ_H
 
@@ -1353,10 +1378,15 @@ rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment)
     commit_size =
         rwlj_min(rwlj_align_pow2(commit_size, page_size), reserve_size);
 
-    void *mem = rwlj_virtual_memory_reserve(reserve_size);
+    usize total_size =
+        reserve_size +
+        cast(usize) rwlj_align_pow2(RWLJ_MEMORY_BUFFER_HEADER, alignment);
+
+    void *mem = rwlj_virtual_memory_reserve(total_size);
     rwlj_virtual_memory_commit(mem, commit_size);
 
     rwljMemory_Buffer *buf = mem;
+    buf->total_size = total_size;
     buf->reserve_size = reserve_size;
     buf->commit_size = commit_size;
     buf->committed = buf->commit_size;
@@ -1370,7 +1400,7 @@ void
 rwlj_memory_buffer_free(rwljMemory_Buffer *m)
 {
     if (m != NULL) {
-        rwlj_virtual_memory_free(m, m->reserve_size);
+        rwlj_virtual_memory_free(m, m->total_size);
     }
 }
 
@@ -2108,7 +2138,7 @@ rwlj_utf16_encode(rwljSlice_U16 dst, rwljSlice_Rune src)
     isize src_len = 0;
 
     while (dst_len < dst.len && src_len < src.len) {
-        if (src.data[src_len] < cast(u16) RWLJ_UTF16_2BYTE_MAX) {
+        if (src.data[src_len] < RWLJ_UTF16_2BYTE_MAX) {
             dst.data[dst_len] = cast(u16) src.data[src_len];
             dst_len += 1;
             src_len += 1;
@@ -2224,6 +2254,269 @@ rwlj_utf16_from_utf8(rwljSlice_U16 dst, rwljSlice_U8 src)
 }
 
 /*
+ *  IO
+ */
+
+#ifdef RWLJ_OS_LINUX
+rwljFile *
+rwlj_get_file_standard(rwljFile_Standard std)
+{
+    if (!__rwlj_file_standard_is_set) {
+        __rwlj_file_standard[RWLJ_STDIN].handle.i = RWLJ_STDIN;
+        __rwlj_file_standard[RWLJ_STDOUT].handle.i = RWLJ_STDOUT;
+        __rwlj_file_standard[RWLJ_STDERR].handle.i = RWLJ_STDERR;
+    }
+
+    return &__rwlj_file_standard[std];
+}
+
+rwljFile
+rwlj_file_open(rwljString path, rwljFile_Flags flags)
+{
+    rwljFile file = { { .i = -1 } };
+
+    if (path.data == NULL || path.len == 0) {
+        return file;
+    }
+
+    i32 file_flags = 0;
+    if (flags & RWLJ_FILE_READ && flags & RWLJ_FILE_WRITE) {
+        file_flags = O_RDWR;
+    } else if (flags & RWLJ_FILE_WRITE) {
+        file_flags = O_WRONLY;
+    } else if (flags & RWLJ_FILE_READ) {
+        file_flags = O_RDONLY;
+    }
+
+    if (flags & RWLJ_FILE_TRUNC) {
+        file_flags |= O_TRUNC;
+    }
+    if (flags & RWLJ_FILE_CREATE) {
+        file_flags |= O_CREAT;
+        if (flags & RWLJ_FILE_EXCL) {
+            file_flags |= O_EXCL;
+            file_flags &= ~O_TRUNC;
+        }
+    }
+    if (flags & RWLJ_FILE_APPEND) {
+        file_flags |= O_APPEND;
+        if (flags & RWLJ_FILE_READ) {
+            file_flags |= O_RDWR;
+        } else {
+            file_flags |= O_WRONLY;
+        }
+    }
+
+    char *filename = malloc(cast(usize) path.len + 1);
+    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
+    filename[path.len] = '\0';
+
+    file.handle.i = open(filename, file_flags, 0644);
+
+    free(filename);
+
+    return file;
+}
+
+isize
+rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    return write(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
+}
+
+isize
+rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    return read(cast(i32) file.handle.i, slice.data, cast(usize) slice.len);
+}
+
+void
+rwlj_file_close(rwljFile file)
+{
+    close(cast(i32) file.handle.i);
+}
+
+bool
+rwlj_file_delete(rwljString path)
+{
+    char *filename = malloc(cast(usize) path.len + 1);
+    rwlj_memory_copy(filename, path.data, cast(usize) path.len);
+    filename[path.len] = '\0';
+
+    bool succeeded = !unlink(filename);
+    free(filename);
+
+    return succeeded;
+}
+#else // RWLJ_OS_WINDOWS
+rwljFile *
+rwlj_get_file_standard(rwljFile_Standard std)
+{
+    if (!__rwlj_file_standard_is_set) {
+        __rwlj_file_standard[RWLJ_STDIN].handle.p =
+            GetStdHandle(STD_INPUT_HANDLE);
+        __rwlj_file_standard[RWLJ_STDOUT].handle.p =
+            GetStdHandle(STD_OUTPUT_HANDLE);
+        __rwlj_file_standard[RWLJ_STDERR].handle.p =
+            GetStdHandle(STD_ERROR_HANDLE);
+    }
+
+    return &__rwlj_file_standard[std];
+}
+
+rwljFile
+rwlj_file_open(rwljString path, rwljFile_Flags flags)
+{
+    rwljFile file = { { .i = -1 } };
+
+    if (path.data == NULL || path.len == 0) {
+        return file;
+    }
+
+    DWORD desired_access = 0;
+    DWORD share_mode = FILE_SHARE_READ;
+    SECURITY_ATTRIBUTES security_attributes = {
+        sizeof(security_attributes),
+        NULL,
+        false,
+    };
+    DWORD creation_disposition = OPEN_EXISTING;
+
+    if (flags & RWLJ_FILE_WRITE) {
+        desired_access = GENERIC_WRITE;
+        share_mode = FILE_SHARE_READ;
+    }
+    if (flags & RWLJ_FILE_APPEND) {
+        desired_access = FILE_APPEND_DATA;
+        share_mode = FILE_SHARE_READ;
+    }
+    if (flags & RWLJ_FILE_READ) {
+        desired_access |= GENERIC_READ;
+        share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    }
+
+    if (flags & RWLJ_FILE_TRUNC) {
+        creation_disposition = TRUNCATE_EXISTING;
+    }
+    if (flags & RWLJ_FILE_CREATE) {
+        creation_disposition = OPEN_ALWAYS;
+        if (flags & RWLJ_FILE_EXCL) {
+            creation_disposition = CREATE_NEW;
+        }
+        if (flags & RWLJ_FILE_TRUNC) {
+            creation_disposition = CREATE_ALWAYS;
+        }
+    }
+    if (flags & RWLJ_FILE_INHERITABLE) {
+        security_attributes.bInheritHandle = true;
+    }
+
+    i32 len =
+        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
+    WCHAR *filepath = NULL;
+    if (len > 0) {
+        filepath = malloc(cast(usize) len + 1);
+        MultiByteToWideChar(
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len + 1
+        );
+        filepath[len] = '\0';
+
+        HANDLE handle = CreateFileW(
+            filepath,
+            desired_access,
+            share_mode,
+            &security_attributes,
+            creation_disposition,
+            0,
+            NULL
+        );
+        if (handle != INVALID_HANDLE_VALUE) {
+            file.handle.p = handle;
+        }
+    }
+    if (filepath != NULL) {
+        free(filepath);
+    }
+
+    return file;
+}
+
+isize
+rwlj_file_write(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    DWORD bytes_written = 0;
+    if (!WriteFile(
+            file.handle.p,
+            slice.data,
+            cast(DWORD) slice.len,
+            &bytes_written,
+            NULL
+        )) {
+        return -1;
+    }
+
+    return bytes_written;
+}
+
+isize
+rwlj_file_read(rwljFile file, rwljSlice_U8 slice)
+{
+    if (slice.data == NULL || slice.len < 0) {
+        return -1;
+    }
+
+    DWORD bytes_read = 0;
+    if (!ReadFile(
+            file.handle.p, slice.data, cast(DWORD) slice.len, &bytes_read, NULL
+        )) {
+        return -1;
+    }
+
+    return bytes_read;
+}
+
+void
+rwlj_file_close(rwljFile file)
+{
+    CloseHandle(file.handle.p);
+}
+
+bool
+rwlj_file_delete(rwljString path)
+{
+    i32 len =
+        MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
+    WCHAR *filepath = NULL;
+    bool succeeded = false;
+    if (len > 0) {
+        filepath = malloc(cast(usize) len + 1);
+        MultiByteToWideChar(
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len + 1
+        );
+        filepath[len] = '\0';
+        succeeded = DeleteFileW(filepath);
+    }
+    if (filepath != NULL) {
+        free(filepath);
+    }
+
+    return succeeded;
+}
+#endif
+
+/*
  *  Strings
  */
 
@@ -2243,9 +2536,13 @@ __rwlj_string_compare(rwljString a, rwljString b, bool sensitive)
     }
 
     if (sensitive) {
-        return rwlj_memory_compare(
-            a.data, b.data, cast(usize) rwlj_min(a.len, b.len)
-        );
+        for (isize i = 0; i < a.len && i < b.len; i += 1) {
+            char x = a.data[i];
+            char y = b.data[i];
+            if (x != y) {
+                return x - y;
+            }
+        }
     }
 
     for (isize i = 0; i < a.len && i < b.len; i += 1) {
@@ -2408,6 +2705,7 @@ rwlj_string_reverse(rwljString s, rwljArena *arena)
     rwlj_unused(s);
     rwlj_unused(arena);
     rwlj_not_implemented();
+    return STRING("");
 }
 
 // C string procedures
@@ -3030,11 +3328,11 @@ rwlj_write_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
         if (decimal_point == -1023) {
             decimal_point = (n64) ? -1022 : 0;
         } else {
-            n64 |= ((1lu) << 52);
+            n64 |= ((1llu) << 52);
         }
         n64 <<= (64 - 56);
         if (prec < 15) {
-            n64 += ((8lu << 56) >> (prec * 4));
+            n64 += ((8llu << 56) >> (prec * 4));
         }
         // add leading chars
 
@@ -3855,10 +4153,10 @@ __rwlj_bprintf_va(
             case RWLJ_INT:
             case RWLJ_CHAR:
             case RWLJ_SHORT:
-                value.i = cast(i64) va_arg(ap, int);
+                value.i = cast(i64) va_arg(ap, i32);
                 break;
             case RWLJ_LONG:
-                value.i = cast(i64) va_arg(ap, long);
+                value.i = cast(i64) va_arg(ap, i64);
                 break;
             }
 
@@ -3884,10 +4182,10 @@ __rwlj_bprintf_va(
             case RWLJ_INT:
             case RWLJ_CHAR:
             case RWLJ_SHORT:
-                value.u = cast(u64) va_arg(ap, int);
+                value.u = cast(u64) va_arg(ap, i32);
                 break;
             case RWLJ_LONG:
-                value.u = cast(u64) va_arg(ap, long);
+                value.u = cast(u64) va_arg(ap, i64);
                 break;
             }
 
@@ -3977,7 +4275,7 @@ __rwlj_bprintf_va(
         }
         case 't': {
             rwljString boolean =
-                va_arg(ap, int) ? STRING("true") : STRING("false");
+                va_arg(ap, i32) ? STRING("true") : STRING("false");
             bytes_written += rwlj_write_string(
                 (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), boolean
             );
@@ -3985,7 +4283,7 @@ __rwlj_bprintf_va(
             continue;
         }
         case 'c':
-            value.i = va_arg(ap, int);
+            value.i = va_arg(ap, i32);
             if (rwlj_slice_set(&buf, bytes_written, cast(u8) value.i)) {
                 bytes_written += 1;
             }
@@ -4066,39 +4364,34 @@ rwlj_bprintfln(rwljSlice_U8 buf, char const *fmt, ...)
 }
 
 internal isize
-__rwlj_fprintf_va(
-    rwljFile_Descriptor fd,
-    bool has_new_line,
-    char const *fmt,
-    va_list ap
-)
+__rwlj_fprintf_va(rwljFile file, bool has_new_line, char const *fmt, va_list ap)
 {
     u8 buf[4096] = { 0 };
     rwljSlice_U8 slice = rwlj_slice_from_buf(buf);
     isize len = __rwlj_bprintf_va(slice, has_new_line, fmt, ap);
 
-    return write(fd, slice.data, cast(usize) len);
+    return rwlj_file_write(file, cast(rwljSlice_U8) rwlj_slice(&slice, 0, len));
 }
 
 isize
-rwlj_fprintf(rwljFile_Descriptor fd, char const *fmt, ...)
+rwlj_fprintf(rwljFile file, char const *fmt, ...)
 {
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(fd, false, fmt, ap);
+    isize len = __rwlj_fprintf_va(file, false, fmt, ap);
     va_end(ap);
 
     return len;
 }
 
 isize
-rwlj_fprintfln(rwljFile_Descriptor fd, char const *fmt, ...)
+rwlj_fprintfln(rwljFile file, char const *fmt, ...)
 {
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(fd, true, fmt, ap);
+    isize len = __rwlj_fprintf_va(file, true, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4110,7 +4403,8 @@ rwlj_eprintf(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDERR, false, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), false, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4122,7 +4416,8 @@ rwlj_eprintfln(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDERR, true, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), true, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4134,7 +4429,8 @@ rwlj_printf(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDOUT, false, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), false, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4146,7 +4442,8 @@ rwlj_printfln(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(RWLJ_STDOUT, true, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), true, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4170,9 +4467,12 @@ rwlj_bprintln(rwljSlice_U8 buf, rwljString s)
 }
 
 isize
-rwlj_fprint(rwljFile_Descriptor fd, rwljString s)
+rwlj_fprint(rwljFile file, rwljString s)
 {
-    if (write(fd, s.data, cast(usize) s.len) == -1) {
+    if (rwlj_file_write(
+            file,
+            cast(rwljSlice_U8) rwlj_slice_from_ptr(cast(u8 *) s.data, 0, s.len)
+        ) == -1) {
         return -1;
     }
 
@@ -4180,13 +4480,18 @@ rwlj_fprint(rwljFile_Descriptor fd, rwljString s)
 }
 
 isize
-rwlj_fprintln(rwljFile_Descriptor fd, rwljString s)
+rwlj_fprintln(rwljFile file, rwljString s)
 {
-    if (rwlj_fprint(fd, s) == -1) {
+    if (rwlj_fprint(file, s) == -1) {
         return -1;
     }
 
-    if (write(fd, "\n", 1) == -1) {
+    rwljString newline = STRING("\n");
+    if (rwlj_file_write(
+            file,
+            cast(rwljSlice_U8)
+                rwlj_slice_from_ptr(cast(u8 *) newline.data, 0, newline.len)
+        ) == -1) {
         return -1;
     }
 
@@ -4196,25 +4501,25 @@ rwlj_fprintln(rwljFile_Descriptor fd, rwljString s)
 isize
 rwlj_print(rwljString s)
 {
-    return rwlj_fprint(RWLJ_STDOUT, s);
+    return rwlj_fprint(*rwlj_get_file_standard(RWLJ_STDOUT), s);
 }
 
 isize
 rwlj_println(rwljString s)
 {
-    return rwlj_fprintln(RWLJ_STDOUT, s);
+    return rwlj_fprintln(*rwlj_get_file_standard(RWLJ_STDOUT), s);
 }
 
 isize
 rwlj_eprint(rwljString s)
 {
-    return rwlj_fprint(RWLJ_STDERR, s);
+    return rwlj_fprint(*rwlj_get_file_standard(RWLJ_STDERR), s);
 }
 
 isize
 rwlj_eprintln(rwljString s)
 {
-    return rwlj_fprintln(RWLJ_STDERR, s);
+    return rwlj_fprintln(*rwlj_get_file_standard(RWLJ_STDERR), s);
 }
 
 // TODO: Give more init options to String_Builder (from buffer, arena or
@@ -4427,7 +4732,7 @@ rwlj_time_sleep(rwljDuration time)
 
     return remaining.tv_sec * RWLJ_TIME_SECOND + remaining.tv_nsec;
 }
-#elif defined(RWLJ_OS_WINDOWS)
+#else  // RWLJ_OS_WINDOWS
 rwljTime
 rwlj_time_now(void)
 {
@@ -4456,8 +4761,9 @@ rwlj_time_sleep(rwljDuration time)
 {
     rwlj_unused(time);
     rwlj_not_implemented();
+    return 0;
 }
-#endif // RWLJ_OS_LINUX
+#endif // RWLJ_OS_WINDOWS
 
 rwljDuration
 rwlj_time_diff(rwljTime t1, rwljTime t2)
@@ -4482,10 +4788,6 @@ rwlj_time_unix_since(i64 t)
 {
     return rwlj_time_unix_diff(rwlj_time_unix_now(), t);
 }
-
-/*
- *  Platform-specific
- */
 
 /*
  *  Testing

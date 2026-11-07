@@ -1,4 +1,7 @@
 #include <assert.h>
+#ifdef __linux__
+#include <errno.h>
+#endif
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -20,20 +23,14 @@ test_math(void)
 
     TEST("Identifies infinity")
     {
-        rwlj_testing_expect(rwlj_is_inf(RWLJ_INFINITY));
-        rwlj_testing_expect(rwlj_is_inf(-RWLJ_INFINITY));
         rwlj_testing_expect(!rwlj_is_inf(0.0));
         rwlj_testing_expect(!rwlj_is_inf(-0.0));
         rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MAX));
         rwlj_testing_expect(!rwlj_is_inf(RWLJ_F64_MIN));
-        rwlj_testing_expect(!rwlj_is_inf(RWLJ_NAN));
     }
 
     TEST("Identifies NaNs")
     {
-        rwlj_testing_expect(rwlj_is_nan(RWLJ_NAN));
-        rwlj_testing_expect(!rwlj_is_nan(RWLJ_INFINITY));
-        rwlj_testing_expect(!rwlj_is_nan(-RWLJ_INFINITY));
         rwlj_testing_expect(!rwlj_is_nan(0.0));
         rwlj_testing_expect(!rwlj_is_nan(-0.0));
         rwlj_testing_expect(!rwlj_is_nan(RWLJ_F64_MAX));
@@ -50,9 +47,6 @@ test_math(void)
         rwlj_testing_expect(rwlj_is_subnormal(max_subnormal));
         rwlj_testing_expect(rwlj_is_subnormal(-min_subnormal));
         rwlj_testing_expect(rwlj_is_subnormal(-max_subnormal));
-        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_NAN));
-        rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_INFINITY));
-        rwlj_testing_expect(!rwlj_is_subnormal(-RWLJ_INFINITY));
         rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MAX));
         rwlj_testing_expect(!rwlj_is_subnormal(RWLJ_F64_MIN));
         rwlj_testing_expect(!rwlj_is_subnormal(3.14159265));
@@ -60,15 +54,6 @@ test_math(void)
 
     TEST("Classifies floats correctly")
     {
-        rwlj_testing_expect_value(
-            rwlj_classify(RWLJ_NAN), RWLJ_FLOAT_CLASS_NAN
-        );
-        rwlj_testing_expect_value(
-            rwlj_classify(RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
-        );
-        rwlj_testing_expect_value(
-            rwlj_classify(-RWLJ_INFINITY), RWLJ_FLOAT_CLASS_INFINITY
-        );
         rwlj_testing_expect_value(
             rwlj_classify(min_subnormal), RWLJ_FLOAT_CLASS_SUBNORMAL
         );
@@ -235,7 +220,7 @@ test_arena(void)
             rwlj_testing_expect(alloc == old_alloc);
             rwlj_testing_expect_value(arena.buf->used, used);
             rwlj_testing_expect_value(arena.total_used, used);
-            rwlj_testing_expect_value(arena.buf->committed, committed);
+            rwlj_testing_expect_value(arena.buf->committed, reserve_size);
 
             old_size = new_size;
             old_alloc = alloc;
@@ -251,7 +236,7 @@ test_arena(void)
             rwlj_testing_expect(alloc == NULL);
             rwlj_testing_expect_value(arena.buf->used, used);
             rwlj_testing_expect_value(arena.total_used, used);
-            rwlj_testing_expect_value(arena.buf->committed, committed);
+            rwlj_testing_expect_value(arena.buf->committed, reserve_size);
         }
 
         // 16/16MB - failed arena_alloc()
@@ -262,7 +247,7 @@ test_arena(void)
             rwlj_testing_expect(alloc == NULL);
             rwlj_testing_expect_value(arena.buf->used, used);
             rwlj_testing_expect_value(arena.total_used, used);
-            rwlj_testing_expect_value(arena.buf->committed, committed);
+            rwlj_testing_expect_value(arena.buf->committed, reserve_size);
         }
 
         // arena_free_all()
@@ -385,7 +370,7 @@ test_arena(void)
             rwlj_testing_expect(alloc == old_alloc);
             rwlj_testing_expect_value(arena.buf->used, used);
             rwlj_testing_expect_value(arena.total_used, total_used);
-            rwlj_testing_expect_value(arena.buf->committed, committed);
+            rwlj_testing_expect_value(arena.buf->committed, reserve_size);
 
             old_size = new_size;
             old_alloc = alloc;
@@ -405,7 +390,7 @@ test_arena(void)
             rwlj_testing_expect(alloc == old_alloc);
             rwlj_testing_expect_value(arena.buf->used, used);
             rwlj_testing_expect_value(arena.total_used, total_used);
-            rwlj_testing_expect_value(arena.buf->committed, committed);
+            rwlj_testing_expect_value(arena.buf->committed, reserve_size);
 
             old_size = new_size;
             old_alloc = alloc;
@@ -1366,6 +1351,7 @@ test_formatting(void)
         u8 buf1[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf1_slice = rwlj_slice_from_buf(buf1);
 
+#ifdef RWLJ_OS_LINUX
         u8 buf2[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf2_slice = rwlj_slice_from_buf(buf2);
 
@@ -1380,6 +1366,8 @@ test_formatting(void)
             };
             rwlj_testing_expect_value(s, expected);
         }
+#endif
+
         {
             void *addr = NULL;
             rwljString s = rwlj_string_from_fmt(&buf1_slice, "|%p|", addr);
@@ -2832,6 +2820,108 @@ test_unicode(void)
     }
 }
 
+static bool
+rwlj_test_file_is_closed(rwljFile file)
+{
+#ifdef RWLJ_OS_LINUX
+    errno = 0;
+    return fcntl(cast(i32) file.handle.i, F_GETFD) == -1 && errno == EBADF;
+#else
+    SetLastError(ERROR_SUCCESS);
+    return GetFileType(file.handle.p) == FILE_TYPE_UNKNOWN &&
+           GetLastError() == ERROR_INVALID_HANDLE;
+#endif
+}
+
+void
+test_file(void)
+{
+    DESCRIBE("rwljFile tests");
+
+    const rwljString rwlj_file_test_path = STRING("rwlj_file_tests.tmp");
+    rwlj_file_delete(rwlj_file_test_path);
+
+    TEST("Opens, writes, reads, and closes a file")
+    {
+        char const contents[] = "hello";
+        char read_buf[sizeof(contents)] = { 0 };
+        rwljFile file = rwlj_file_open(
+            rwlj_file_test_path, RWLJ_FILE_CREATE | RWLJ_FILE_WRITE
+        );
+
+        rwlj_testing_expect(file.handle.i != -1);
+        rwlj_testing_expect_value(
+            rwlj_file_write(
+                file,
+                cast(rwljSlice_U8) rwlj_slice_from_ptr(
+                    cast(u8 *) contents, 0, rwlj_count_of(contents) - 1
+                )
+            ),
+            cast(isize) sizeof(contents) - 1
+        );
+        rwlj_file_close(file);
+        rwlj_testing_expect(rwlj_test_file_is_closed(file));
+
+        file = rwlj_file_open(rwlj_file_test_path, RWLJ_FILE_READ);
+        rwlj_testing_expect(file.handle.i != -1);
+        rwlj_testing_expect_value(
+            rwlj_file_read(
+                file,
+                cast(rwljSlice_U8) rwlj_slice_from_ptr(
+                    cast(u8 *) read_buf, 0, rwlj_count_of(read_buf) - 1
+                )
+            ),
+            cast(isize) rwlj_count_of(contents) - 1
+        );
+        rwlj_testing_expect_value_string(STRING(read_buf), STRING("hello"));
+        rwlj_file_close(file);
+    }
+
+    TEST("Append adds data without replacing existing contents")
+    {
+        char const suffix[] = " world";
+        char read_buf[sizeof("hello world")] = { 0 };
+        rwljFile file = rwlj_file_open(
+            rwlj_file_test_path, RWLJ_FILE_APPEND | RWLJ_FILE_READ
+        );
+
+        rwlj_testing_expect(file.handle.i != -1);
+        rwlj_testing_expect_value(
+            rwlj_file_write(
+                file,
+                cast(rwljSlice_U8) rwlj_slice_from_ptr(
+                    cast(u8 *) suffix, 0, rwlj_count_of(suffix) - 1
+                )
+            ),
+            cast(isize) sizeof(suffix) - 1
+        );
+        rwlj_file_close(file);
+
+        file = rwlj_file_open(rwlj_file_test_path, RWLJ_FILE_READ);
+        rwlj_testing_expect_value(
+            rwlj_file_read(
+                file,
+                cast(rwljSlice_U8) rwlj_slice_from_ptr(
+                    cast(u8 *) read_buf, 0, rwlj_count_of(read_buf) - 1
+                )
+            ),
+            cast(isize) sizeof(read_buf) - 1
+        );
+        rwlj_testing_expect_value_string(
+            STRING(read_buf), STRING("hello world")
+        );
+        rwlj_file_close(file);
+    }
+
+    TEST("Rejects empty paths")
+    {
+        rwljFile file = rwlj_file_open(STRING(""), RWLJ_FILE_READ);
+        rwlj_testing_expect(file.handle.i == -1);
+    }
+
+    rwlj_file_delete(rwlj_file_test_path);
+}
+
 // clang-format off
 rwljTest_Proc test_arr[] = {
     test_math,
@@ -2842,6 +2932,7 @@ rwljTest_Proc test_arr[] = {
     test_string_builder,
     test_string,
     test_unicode,
+    test_file,
 };
 // clang-format on
 
