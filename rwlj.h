@@ -48,6 +48,7 @@
 // Windows headers
 #include <intrin.h>
 #include <malloc.h>
+#include <memory.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -461,6 +462,9 @@ rwlj_memory_buffer_new(usize reserve_size, usize commit_size, usize alignment);
 void *
 rwlj_memory_buffer_alloc(rwljMemory_Buffer *m, usize size, usize alignment);
 void rwlj_memory_buffer_free(rwljMemory_Buffer *m);
+
+// TODO: Allocator interface and heap_allocator (the mallocs in file_open and
+// file_delete are kinda ugly)
 
 /*
  *  Memory Allocators
@@ -897,7 +901,7 @@ enum rwljFile_Standard {
 };
 typedef isize rwljFile_Standard;
 
-rwljFile __rwlj_file_standard[RWLJ_FILE_STANDARD_COUNT] = {0};
+rwljFile __rwlj_file_standard[RWLJ_FILE_STANDARD_COUNT] = { 0 };
 bool __rwlj_file_standard_is_set = false;
 
 rwljFile *rwlj_get_file_standard(rwljFile_Standard std);
@@ -907,7 +911,10 @@ isize rwlj_file_read(rwljFile file, rwljSlice_U8 slice);
 void rwlj_file_close(rwljFile file);
 bool rwlj_file_delete(rwljString path);
 
-// rwljString procedures
+/*
+ *  rwljString procedures
+ */
+
 bsize __rwlj_string_compare(rwljString a, rwljString b, bool sensitive);
 #define rwlj_string_compare(a, b)             __rwlj_string_compare(a, b, true)
 #define rwlj_string_compare_insensitive(a, b) __rwlj_string_compare(a, b, false)
@@ -2250,9 +2257,9 @@ rwlj_utf16_from_utf8(rwljSlice_U16 dst, rwljSlice_U8 src)
  *  IO
  */
 
-// Gotta love when your string type is useless because of API quirkness
 #ifdef RWLJ_OS_LINUX
-rwljFile *rwlj_get_file_standard(rwljFile_Standard std)
+rwljFile *
+rwlj_get_file_standard(rwljFile_Standard std)
 {
     if (!__rwlj_file_standard_is_set) {
         __rwlj_file_standard[RWLJ_STDIN].handle.i = RWLJ_STDIN;
@@ -2350,12 +2357,16 @@ rwlj_file_delete(rwljString path)
     return succeeded;
 }
 #else // RWLJ_OS_WINDOWS
-rwljFile *rwlj_get_file_standard(rwljFile_Standard std)
+rwljFile *
+rwlj_get_file_standard(rwljFile_Standard std)
 {
     if (!__rwlj_file_standard_is_set) {
-        __rwlj_file_standard[RWLJ_STDIN].handle.p = GetStdHandle(STD_INPUT_HANDLE);
-        __rwlj_file_standard[RWLJ_STDOUT].handle.p = GetStdHandle(STD_OUTPUT_HANDLE);
-        __rwlj_file_standard[RWLJ_STDERR].handle.p = GetStdHandle(STD_ERROR_HANDLE);
+        __rwlj_file_standard[RWLJ_STDIN].handle.p =
+            GetStdHandle(STD_INPUT_HANDLE);
+        __rwlj_file_standard[RWLJ_STDOUT].handle.p =
+            GetStdHandle(STD_OUTPUT_HANDLE);
+        __rwlj_file_standard[RWLJ_STDERR].handle.p =
+            GetStdHandle(STD_ERROR_HANDLE);
     }
 
     return &__rwlj_file_standard[std];
@@ -2379,15 +2390,17 @@ rwlj_file_open(rwljString path, rwljFile_Flags flags)
     };
     DWORD creation_disposition = OPEN_EXISTING;
 
-    if (flags & RWLJ_FILE_APPEND) {
-        desired_access |= (FILE_APPEND_DATA | GENERIC_WRITE);
-    }
     if (flags & RWLJ_FILE_WRITE) {
-        desired_access |= GENERIC_WRITE;
+        desired_access = GENERIC_WRITE;
+        share_mode = FILE_SHARE_READ;
+    }
+    if (flags & RWLJ_FILE_APPEND) {
+        desired_access = FILE_APPEND_DATA;
+        share_mode = FILE_SHARE_READ;
     }
     if (flags & RWLJ_FILE_READ) {
         desired_access |= GENERIC_READ;
-        share_mode |= (FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+        share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
     }
 
     if (flags & RWLJ_FILE_TRUNC) {
@@ -2409,11 +2422,13 @@ rwlj_file_open(rwljString path, rwljFile_Flags flags)
     i32 len =
         MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
     WCHAR *filepath = NULL;
-    if (len != 0) {
-        filepath = malloc(cast(usize) len);
+    if (len > 0) {
+        filepath = malloc(cast(usize) len + 1);
         MultiByteToWideChar(
-            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len + 1
         );
+        filepath[len] = '\0';
+
         HANDLE handle = CreateFileW(
             filepath,
             desired_access,
@@ -2485,11 +2500,12 @@ rwlj_file_delete(rwljString path)
         MultiByteToWideChar(CP_UTF8, 0, path.data, cast(i32) path.len, NULL, 0);
     WCHAR *filepath = NULL;
     bool succeeded = false;
-    if (len != 0) {
-        filepath = malloc(cast(usize) len);
+    if (len > 0) {
+        filepath = malloc(cast(usize) len + 1);
         MultiByteToWideChar(
-            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len
+            CP_UTF8, 0, path.data, cast(i32) path.len, filepath, len + 1
         );
+        filepath[len] = '\0';
         succeeded = DeleteFileW(filepath);
     }
     if (filepath != NULL) {
@@ -2520,9 +2536,13 @@ __rwlj_string_compare(rwljString a, rwljString b, bool sensitive)
     }
 
     if (sensitive) {
-        return rwlj_memory_compare(
-            a.data, b.data, cast(usize) rwlj_min(a.len, b.len)
-        );
+        for (isize i = 0; i < a.len && i < b.len; i += 1) {
+            char x = a.data[i];
+            char y = b.data[i];
+            if (x != y) {
+                return x - y;
+            }
+        }
     }
 
     for (isize i = 0; i < a.len && i < b.len; i += 1) {
@@ -4133,10 +4153,10 @@ __rwlj_bprintf_va(
             case RWLJ_INT:
             case RWLJ_CHAR:
             case RWLJ_SHORT:
-                value.i = cast(i64) va_arg(ap, int);
+                value.i = cast(i64) va_arg(ap, i32);
                 break;
             case RWLJ_LONG:
-                value.i = cast(i64) va_arg(ap, long);
+                value.i = cast(i64) va_arg(ap, i64);
                 break;
             }
 
@@ -4162,10 +4182,10 @@ __rwlj_bprintf_va(
             case RWLJ_INT:
             case RWLJ_CHAR:
             case RWLJ_SHORT:
-                value.u = cast(u64) va_arg(ap, int);
+                value.u = cast(u64) va_arg(ap, i32);
                 break;
             case RWLJ_LONG:
-                value.u = cast(u64) va_arg(ap, long);
+                value.u = cast(u64) va_arg(ap, i64);
                 break;
             }
 
@@ -4255,7 +4275,7 @@ __rwlj_bprintf_va(
         }
         case 't': {
             rwljString boolean =
-                va_arg(ap, int) ? STRING("true") : STRING("false");
+                va_arg(ap, i32) ? STRING("true") : STRING("false");
             bytes_written += rwlj_write_string(
                 (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), boolean
             );
@@ -4263,7 +4283,7 @@ __rwlj_bprintf_va(
             continue;
         }
         case 'c':
-            value.i = va_arg(ap, int);
+            value.i = va_arg(ap, i32);
             if (rwlj_slice_set(&buf, bytes_written, cast(u8) value.i)) {
                 bytes_written += 1;
             }
@@ -4383,7 +4403,8 @@ rwlj_eprintf(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), false, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), false, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4395,7 +4416,8 @@ rwlj_eprintfln(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), true, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDERR), true, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4407,7 +4429,8 @@ rwlj_printf(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), false, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), false, fmt, ap);
     va_end(ap);
 
     return len;
@@ -4419,7 +4442,8 @@ rwlj_printfln(char const *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    isize len = __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), true, fmt, ap);
+    isize len =
+        __rwlj_fprintf_va(*rwlj_get_file_standard(RWLJ_STDOUT), true, fmt, ap);
     va_end(ap);
 
     return len;

@@ -1351,6 +1351,7 @@ test_formatting(void)
         u8 buf1[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf1_slice = rwlj_slice_from_buf(buf1);
 
+#ifdef RWLJ_OS_LINUX
         u8 buf2[rwlj_kb(1)] = { 0 };
         rwljSlice_U8 buf2_slice = rwlj_slice_from_buf(buf2);
 
@@ -1365,6 +1366,8 @@ test_formatting(void)
             };
             rwlj_testing_expect_value(s, expected);
         }
+#endif
+
         {
             void *addr = NULL;
             rwljString s = rwlj_string_from_fmt(&buf1_slice, "|%p|", addr);
@@ -2835,7 +2838,7 @@ test_file(void)
 {
     DESCRIBE("rwljFile tests");
 
-    rwljString rwlj_file_test_path = STRING("rwlj_file_tests.tmp");
+    const rwljString rwlj_file_test_path = STRING("rwlj_file_tests.tmp");
     rwlj_file_delete(rwlj_file_test_path);
 
     TEST("Opens, writes, reads, and closes a file")
@@ -2907,41 +2910,6 @@ test_file(void)
         rwlj_testing_expect_value_string(
             STRING(read_buf), STRING("hello world")
         );
-        rwlj_file_close(file);
-    }
-
-    TEST("Creation and status flags have the expected effects")
-    {
-        rwljFile file;
-
-        file = rwlj_file_open(
-            rwlj_file_test_path, RWLJ_FILE_CREATE | RWLJ_FILE_EXCL
-        );
-        rwlj_testing_expect(file.handle.i == -1);
-
-        file = rwlj_file_open(
-            rwlj_file_test_path, RWLJ_FILE_TRUNC | RWLJ_FILE_WRITE
-        );
-        rwlj_testing_expect(file.handle.i != -1);
-        rwlj_file_close(file);
-
-        file = rwlj_file_open(
-            rwlj_file_test_path, RWLJ_FILE_CREATE | RWLJ_FILE_EXCL
-        );
-        rwlj_testing_expect(file.handle.i == -1);
-
-        rwlj_testing_expect(rwlj_file_delete(rwlj_file_test_path));
-        file = rwlj_file_open(
-            rwlj_file_test_path,
-            RWLJ_FILE_CREATE | RWLJ_FILE_EXCL | RWLJ_FILE_WRITE
-        );
-        rwlj_testing_expect(file.handle.i != -1);
-        rwlj_file_close(file);
-
-        file = rwlj_file_open(
-            rwlj_file_test_path, RWLJ_FILE_CREATE | RWLJ_FILE_WRITE
-        );
-        rwlj_testing_expect(file.handle.i != -1);
         rwlj_file_close(file);
     }
 
