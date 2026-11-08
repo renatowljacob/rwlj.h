@@ -67,7 +67,7 @@
 #undef VC_EXTRALEAN
 #endif
 
-// TODO: basic Linux/Windows IO and networking
+// TODO: basic Linux/Windows networking
 
 // TODO: pthreads / windows.h (?)
 
@@ -100,11 +100,7 @@
 #define RWLJ_FILE     __FILE__
 #define RWLJ_COUNTER  (__COUNTER__ + 1)
 
-#define rwlj_static_assert_msg(cond, msg) global u8 msg[!!(cond) ? 1 : -1]
-
-#define rwlj_static_assert(cond) rwlj_static_assert_msg(cond, static_assertion)
-
-#define rwlj_panic(msg) rwlj_static_assert_msg(false, msg)
+#define rwlj_static_assert(cond, msg) _Static_assert(cond, msg)
 
 #ifdef RWLJ_OS_LINUX
 typedef int8_t i8;
@@ -126,15 +122,15 @@ typedef signed __int64 i64;
 typedef unsigned __int64 u64;
 #endif
 
-rwlj_static_assert(sizeof(u8) == sizeof(i8));
-rwlj_static_assert(sizeof(u16) == sizeof(i16));
-rwlj_static_assert(sizeof(u32) == sizeof(i32));
-rwlj_static_assert(sizeof(u64) == sizeof(i64));
+rwlj_static_assert(sizeof(u8) == sizeof(i8), "i8 and u8 size mismatch");
+rwlj_static_assert(sizeof(u16) == sizeof(i16), "i16 and u16 size mismatch");
+rwlj_static_assert(sizeof(u32) == sizeof(i32), "i32 and u32 size mismatch");
+rwlj_static_assert(sizeof(u64) == sizeof(i64), "i64 and u64 size mismatch");
 
-rwlj_static_assert(sizeof(u8) == 1);
-rwlj_static_assert(sizeof(u16) == 2);
-rwlj_static_assert(sizeof(u32) == 4);
-rwlj_static_assert(sizeof(u64) == 8);
+rwlj_static_assert(sizeof(i8) == 1, "i8 is not a byte");
+rwlj_static_assert(sizeof(i16) == 2, "i16 is not 2 bytes");
+rwlj_static_assert(sizeof(i32) == 4, "i32 is not 4 bytes");
+rwlj_static_assert(sizeof(i64) == 8, "i64 is not 8 bytes");
 
 typedef intptr_t intptr;
 typedef uintptr_t uintptr;
@@ -142,7 +138,10 @@ typedef ptrdiff_t ptrdiff;
 typedef ptrdiff isize;
 typedef size_t usize;
 
-rwlj_static_assert(sizeof(usize) == sizeof(isize));
+rwlj_static_assert(
+    sizeof(usize) == sizeof(isize),
+    "isize and usize size mismatch"
+);
 
 typedef bool b8;
 typedef i16 b16;
@@ -153,8 +152,8 @@ typedef isize bsize;
 typedef float f32;
 typedef double f64;
 
-rwlj_static_assert(sizeof(f32) == 4);
-rwlj_static_assert(sizeof(f64) == 8);
+rwlj_static_assert(sizeof(f32) == 4, "f32 is not 4 bytes");
+rwlj_static_assert(sizeof(f64) == 8, "f64 is not 8 bytes");
 
 #define RWLJ_U8_MIN 0u
 #define RWLJ_U8_MAX 0xffu
@@ -230,7 +229,7 @@ rwlj_static_assert(sizeof(f64) == 8);
 
 #define rwlj_assert_msg(cond, ...) rwlj_no_op()
 
-#define rwlj_assert_fail(...) rwlj_no_op()
+#define rwlj_panic(...) rwlj_no_op()
 
 #define rwlj_not_implemented() rwlj_no_op()
 #else // RWLJ_DISABLE_ASSERT
@@ -263,11 +262,11 @@ rwlj_static_assert(sizeof(f64) == 8);
         RWLJ_TRAP();                                                           \
     } while (false)
 
-#define rwlj_assert_fail(...) rwlj_assert_msg(false, __VA_ARGS__)
+#define rwlj_panic(...) rwlj_assert_msg(false, __VA_ARGS__)
 
 #define rwlj_not_implemented()                                                 \
-    rwlj_assert_fail(                                                          \
-        "NOT IMPLEMENTED: %s:%d:%s()", RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION     \
+    rwlj_panic(                                                                \
+        "Not implemented: %s:%d:%s()", RWLJ_FILE, RWLJ_LINE, RWLJ_FUNCTION     \
     )
 #endif // RWLJ_DISABLE_ASSERT
 
@@ -1456,7 +1455,7 @@ __rwlj_arena_init_aligned(
 
     switch (cast(enum rwljArena_Kind) kind) {
     default: {
-        rwlj_assert_fail("invalid Arena_Kind: %ld", kind);
+        rwlj_panic("invalid Arena_Kind: %ld", kind);
     }
     case RWLJ_ARENA_STATIC: {
         if (reserve_size == 0) {
@@ -1522,7 +1521,7 @@ rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment)
     void *allocation = rwlj_memory_buffer_alloc(arena->buf, size, alignment);
     switch (cast(enum rwljArena_Kind) arena->kind) {
     default: {
-        rwlj_assert_fail("Invalid rwljArena_Kind");
+        rwlj_panic("Invalid rwljArena_Kind");
 
         break;
     }
@@ -3266,8 +3265,6 @@ __rwlj_lead_sign(u32 fl, char *sign)
     }
 }
 
-// TODO: suppress ASAN diagnostic
-
 isize
 rwlj_write_f64(rwljSlice_U8 buf, f64 number, u8 fmt, i64 precision)
 {
@@ -4692,7 +4689,7 @@ rwlj_time_now(void)
 #elif defined(CLOCK_MONOTONIC)
     id = CLOCK_MONOTONIC;
 #else
-    rwlj_panic(no_monotonic_clock);
+    rwlj_panic("No monotonic clock");
 #endif
 
     struct timespec timespec = { 0 };
