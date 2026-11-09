@@ -527,6 +527,8 @@ void __rwlj_arena_init_aligned(
 void *rwlj_arena_alloc_aligned(rwljArena *arena, usize size, usize alignment);
 #define rwlj_arena_alloc(arena, size)                                          \
     rwlj_arena_alloc_aligned(arena, size, RWLJ_DEFAULT_ALIGNMENT)
+#define rwlj_arena_alloc_slice(arena, size)                                    \
+    { rwlj_arena_alloc(arena, cast(usize)(size)), size }
 
 void *rwlj_arena_resize_aligned(
     rwljArena *arena,
@@ -904,6 +906,7 @@ typedef isize rwljFile_Standard;
 rwljFile __rwlj_file_standard[RWLJ_FILE_STANDARD_COUNT] = { 0 };
 bool __rwlj_file_standard_is_set = false;
 
+// TODO: rwlj_file_to_fd or rwlj_fd_from_file
 rwljFile *rwlj_get_file_standard(rwljFile_Standard std);
 rwljFile rwlj_file_open(rwljString path, rwljFile_Flags flags);
 isize rwlj_file_write(rwljFile file, rwljSlice_U8 slice);
@@ -2668,8 +2671,7 @@ __rwlj_string_split(
 rwljString
 rwlj_string_clone(rwljString s, rwljArena *arena)
 {
-    rwljString cloned = { 0 };
-    cloned.data = rwlj_arena_alloc(arena, cast(usize) s.len);
+    rwljString cloned = rwlj_arena_alloc_slice(arena, s.len);
     if (cloned.data == NULL || s.data == NULL) {
         return cloned;
     }
@@ -2682,21 +2684,20 @@ rwlj_string_clone(rwljString s, rwljArena *arena)
 rwljString
 rwlj_string_concatenate(rwljString a, rwljString b, rwljArena *arena)
 {
-    isize buf_len = a.len + b.len;
-    u8 *buf = rwlj_arena_alloc(arena, cast(usize)(buf_len));
-    if (buf == NULL) {
+    rwljSlice_U8 buf = rwlj_arena_alloc_slice(arena, a.len + b.len);
+    if (buf.data == NULL) {
         return STRING("");
     }
 
     isize i = 0;
     for (; i < a.len; i += 1) {
-        buf[i] = cast(u8) a.data[i];
+        buf.data[i] = cast(u8) a.data[i];
     }
-    for (isize j = 0; j < b.len && i < buf_len; j += 1, i += 1) {
-        buf[i] = cast(u8) b.data[j];
+    for (isize j = 0; j < b.len && i < buf.len; j += 1, i += 1) {
+        buf.data[i] = cast(u8) b.data[j];
     }
 
-    return rwlj_string_from_ptr(buf, 0, buf_len);
+    return rwlj_string_from_slice(&buf);
 }
 
 rwljString
@@ -2713,13 +2714,10 @@ rwlj_string_reverse(rwljString s, rwljArena *arena)
 char *
 rwlj_cstring_from_string(rwljString s, rwljArena *arena)
 {
-    usize buf_size = cast(usize) s.len + 1;
+    rwljSlice_U8 buf = rwlj_arena_alloc_slice(arena, cast(isize) s.len + 1);
+    rwlj_memory_copy(buf.data, s.data, cast(usize) s.len);
 
-    // NOTE: Alloc already memzeroes the buffer
-    u8 *buf = rwlj_arena_alloc(arena, buf_size);
-    rwlj_memory_copy(buf, s.data, buf_size - 1);
-
-    return cast(char *) buf;
+    return cast(char *) buf.data;
 }
 
 isize
