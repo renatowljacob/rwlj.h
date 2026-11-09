@@ -798,7 +798,8 @@ GENERIC_ARRAY(rwljString16, String16);
     {                                                                          \
         cast(char *) & (ptr)[start], rwlj_max((end) - (start), 0)              \
     }
-#define rwlj_string(str, start, end)  rwlj_string_from_ptr(str.data, start, end)
+#define rwlj_string(str, start, end)                                           \
+    rwlj_string_from_ptr((str)->data, start, end)
 #define rwlj_string_from_slice(slice) rwlj_string(slice, 0, (slice)->len)
 
 /*
@@ -2542,13 +2543,13 @@ __rwlj_string_compare(rwljString a, rwljString b, bool sensitive)
                 return x - y;
             }
         }
-    }
-
-    for (isize i = 0; i < a.len && i < b.len; i += 1) {
-        char x = rwlj_to_lower(a.data[i]);
-        char y = rwlj_to_lower(b.data[i]);
-        if (x != y) {
-            return x - y;
+    } else {
+        for (isize i = 0; i < a.len && i < b.len; i += 1) {
+            char x = rwlj_to_lower(a.data[i]);
+            char y = rwlj_to_lower(b.data[i]);
+            if (x != y) {
+                return x - y;
+            }
         }
     }
 
@@ -2574,7 +2575,7 @@ __rwlj_string_contains(rwljString s, rwljString substr, bool sensitive)
 
     for (isize i = 0; i < s.len; i += 1) {
         if (!__rwlj_string_compare(
-                rwlj_string(s, i, s.len), substr, sensitive
+                rwlj_string(&s, i, s.len), substr, sensitive
             )) {
             return true;
         }
@@ -2591,7 +2592,7 @@ __rwlj_string_index(rwljString s, rwljString substr, bool sensitive)
 
     for (isize i = 0; i < s.len; i += 1) {
         if (!__rwlj_string_compare(
-                rwlj_string(s, i, s.len), substr, sensitive
+                rwlj_string(&s, i, s.len), substr, sensitive
             )) {
             return i;
         }
@@ -2609,7 +2610,7 @@ __rwlj_string_count(rwljString s, rwljString substr, bool sensitive)
     isize count = 0;
     for (isize i = 0; i < s.len; i += 1) {
         if (!__rwlj_string_compare(
-                rwlj_string(s, i, s.len), substr, sensitive
+                rwlj_string(&s, i, s.len), substr, sensitive
             )) {
             count += 1;
             i += (substr.len - 1);
@@ -2636,7 +2637,7 @@ __rwlj_string_split(
     if (separator.len == 0 && separator.data[0] == '\0') {
         rwlj_array_init_dynamic_reserve(&parts, s.len, arena);
         for (isize i = 0; i < s.len; i += 1) {
-            rwlj_array_append(&parts, rwlj_string(s, i, i + 1));
+            rwlj_array_append(&parts, rwlj_string(&s, i, i + 1));
         }
 
         return (rwljSlice_String){ parts.data, parts.len };
@@ -2653,10 +2654,10 @@ __rwlj_string_split(
     isize start = 0;
     for (isize i = 0; i < n; i += 1) {
         isize res = __rwlj_string_index(
-            rwlj_string(s, index, s.len), separator, sensitive
+            rwlj_string(&s, index, s.len), separator, sensitive
         );
         index = res == -1 ? s.len : index + res;
-        rwljString part = rwlj_string(s, start, index);
+        rwljString part = rwlj_string(&s, start, index);
         rwlj_array_append(&parts, part);
         start = index = rwlj_min(index + separator.len, s.len);
     }
@@ -4240,7 +4241,8 @@ __rwlj_bprintf_va(
             conv.data[1] = ptr_fmt;
             conv_bytes_written += 2;
             conv_bytes_written += rwlj_write_u64(
-                (rwljSlice_U8)rwlj_slice(&conv, conv_bytes_written, conv.len),
+                cast(rwljSlice_U8)
+                    rwlj_slice(&conv, conv_bytes_written, conv.len),
                 value.u,
                 ptr_fmt
             );
@@ -4257,7 +4259,7 @@ __rwlj_bprintf_va(
                 s, 0, rwlj_cstring_len(s, buf.len - bytes_written)
             );
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), str
+                cast(rwljSlice_U8) rwlj_slice(&buf, bytes_written, buf.len), str
             );
 
             continue;
@@ -4265,7 +4267,7 @@ __rwlj_bprintf_va(
         case 'S': {
             rwljString s = va_arg(ap, rwljString);
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), s
+                cast(rwljSlice_U8) rwlj_slice(&buf, bytes_written, buf.len), s
             );
 
             continue;
@@ -4274,7 +4276,8 @@ __rwlj_bprintf_va(
             rwljString boolean =
                 va_arg(ap, i32) ? STRING("true") : STRING("false");
             bytes_written += rwlj_write_string(
-                (rwljSlice_U8)rwlj_slice(&buf, bytes_written, buf.len), boolean
+                cast(rwljSlice_U8) rwlj_slice(&buf, bytes_written, buf.len),
+                boolean
             );
 
             continue;
